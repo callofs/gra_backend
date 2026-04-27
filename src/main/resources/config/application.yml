@@ -1,0 +1,11 @@
+spring:
+  profiles:
+    active: dev
+
+jwt:
+  secret: replace-this-with-a-strong-jwt-secret-key-at-least-32-chars
+  cookie:
+    name: gra_token
+    path: /
+    secure: false
+    same-site: Lax

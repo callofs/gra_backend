@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+logging:
+  file:
+    name: E:\graduation_project\log
+  level:
+    com.graProject: debug
+
+spring:
+  application:
+    name: graProject
+  datasource:
+    url: jdbc:mysql://localhost:3306/parenting_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      url: jdbc:mysql://localhost:3306/parenting_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: root
+      password: 123456
+      driver-class-name: com.mysql.cj.jdbc.Driver
+
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+#swagger配置
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
