@@ -15,6 +15,7 @@ import com.graProject.graBackend.mapper.UserMapper;
 import com.graProject.graBackend.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 
@@ -156,6 +157,80 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * 修改当前用户头像。
+     *
+     * 接收图片文件并以二进制形式写入用户表的 avatar 字段。
+     *
+     * @param loginUser 当前登录用户
+     * @param file      头像图片文件
+     * @return 修改结果提示
+     */
+    @Override
+    public String updateAvatar(UserDTO loginUser, MultipartFile file) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        if (file == null || file.isEmpty()) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "头像文件不能为空");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null || !StringUtils.hasText(contentType)) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "仅支持上传图片格式文件");
+        }
+
+        String lowerContentType = contentType.toLowerCase();
+        if (!lowerContentType.startsWith("image/")) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "仅支持上传图片格式文件");
+        }
+
+        byte[] avatarBytes;
+        try {
+            avatarBytes = file.getBytes();
+        } catch (java.io.IOException e) {
+            throw new UserLoginException(HttpCode.FAILED, "头像读取失败");
+        }
+
+        UserDO updateUser = new UserDO();
+        updateUser.setId(loginUser.getId());
+        updateUser.setAvatar(avatarBytes);
+        updateUser.setUpdateTime(LocalDateTime.now());
+
+        if (userMapper.updateById(updateUser) <= 0) {
+            throw new UserLoginException(HttpCode.FAILED, "头像更新失败");
+        }
+        return "头像更新成功";
+    }
+
+    /**
+     * 获取当前登录用户的完整资料。
+     *
+     * 根据当前登录用户 ID 从数据库读取最新用户信息并返回。
+     *
+     * @param loginUser 当前登录用户
+     * @return 当前登录用户完整资料
+     */
+    @Override
+    public UserDTO getCurrentUserProfile(UserDTO loginUser) {
+        UserDO userDO = getCurrentUserEntity(loginUser);
+        UserDTO userDTO = buildUserDTO(userDO);
+        userDTO.setAvatar(null);
+        return userDTO;
+    }
+
+    /**
+     * 获取当前登录用户头像二进制数据。
+     *
+     * @param loginUser 当前登录用户
+     * @return 头像二进制数据
+     */
+    @Override
+    public byte[] getCurrentUserAvatar(UserDTO loginUser) {
+        UserDO userDO = getCurrentUserEntity(loginUser);
+        return userDO.getAvatar();
+    }
+
+    /**
      * 校验用户名是否已存在。
      *
      * @param username 用户名
@@ -167,5 +242,54 @@ public class UserServiceImpl implements UserService {
                 .eq(UserDO::getIsDelete, 0)
                 .last("limit 1");
         return userMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 根据当前登录用户信息读取数据库中的最新用户记录。
+     *
+     * @param loginUser 当前登录用户
+     * @return 用户实体
+     */
+    private UserDO getCurrentUserEntity(UserDTO loginUser) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getId, loginUser.getId())
+                .eq(UserDO::getIsDelete, 0)
+                .last("limit 1");
+        UserDO userDO = userMapper.selectOne(wrapper);
+        if (userDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "用户不存在");
+        }
+        return userDO;
+    }
+
+    /**
+     * 将用户实体转换为用户资料 DTO。
+     *
+     * @param userDO 用户实体
+     * @return 用户资料 DTO
+     */
+    private UserDTO buildUserDTO(UserDO userDO) {
+        return UserDTO.builder()
+                .id(userDO.getId())
+                .username(userDO.getUsername())
+                .nickname(userDO.getNickname())
+                .avatar(userDO.getAvatar())
+                .phone(userDO.getPhone())
+                .email(userDO.getEmail())
+                .gender(userDO.getGender())
+                .address(userDO.getAddress())
+                .role(userDO.getRole())
+                .creditScore(userDO.getCreditScore())
+                .certificationMaterials(userDO.getCertificationMaterials())
+                .status(userDO.getStatus())
+                .createTime(userDO.getCreateTime())
+                .updateTime(userDO.getUpdateTime())
+                .isDelete(userDO.getIsDelete())
+                .password(null)
+                .build();
     }
 }

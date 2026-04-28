@@ -42,10 +42,6 @@ public class JwtTokenUtil {
      */
     private static final String CLAIM_NICKNAME = "nickname";
     /**
-     * 用户头像载荷字段。
-     */
-    private static final String CLAIM_AVATAR = "avatar";
-    /**
      * 用户邮箱载荷字段。
      */
     private static final String CLAIM_EMAIL = "email";
@@ -97,7 +93,6 @@ public class JwtTokenUtil {
                 .withClaim(CLAIM_USER_ID, userDTO.getId())
                 .withClaim(CLAIM_USERNAME, userDTO.getUsername())
                 .withClaim(CLAIM_NICKNAME, userDTO.getNickname())
-                .withClaim(CLAIM_AVATAR, userDTO.getAvatar())
                 .withClaim(CLAIM_EMAIL, userDTO.getEmail())
                 .withClaim(CLAIM_PHONE, userDTO.getPhone())
                 .withClaim(CLAIM_ROLE, userDTO.getRole())
@@ -148,7 +143,6 @@ public class JwtTokenUtil {
                 .id(readLongClaim(decodedJWT, CLAIM_USER_ID))
                 .username(readStringClaim(decodedJWT, CLAIM_USERNAME))
                 .nickname(readStringClaim(decodedJWT, CLAIM_NICKNAME))
-                .avatar(readStringClaim(decodedJWT, CLAIM_AVATAR))
                 .email(readStringClaim(decodedJWT, CLAIM_EMAIL))
                 .phone(readStringClaim(decodedJWT, CLAIM_PHONE))
                 .role(readIntegerClaim(decodedJWT, CLAIM_ROLE))
@@ -179,7 +173,6 @@ public class JwtTokenUtil {
         result.put(CLAIM_USER_ID, readLongClaim(decodedJWT, CLAIM_USER_ID));
         result.put(CLAIM_USERNAME, readStringClaim(decodedJWT, CLAIM_USERNAME));
         result.put(CLAIM_NICKNAME, readStringClaim(decodedJWT, CLAIM_NICKNAME));
-        result.put(CLAIM_AVATAR, readStringClaim(decodedJWT, CLAIM_AVATAR));
         result.put(CLAIM_EMAIL, readStringClaim(decodedJWT, CLAIM_EMAIL));
         result.put(CLAIM_PHONE, readStringClaim(decodedJWT, CLAIM_PHONE));
         result.put(CLAIM_ROLE, readIntegerClaim(decodedJWT, CLAIM_ROLE));

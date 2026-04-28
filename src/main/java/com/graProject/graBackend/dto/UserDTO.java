@@ -40,7 +40,7 @@ public class UserDTO implements Serializable {
      * 头像编码
      */
 
-    private String avatar;
+    private byte[] avatar;
     /**
      * 手机号码
      */

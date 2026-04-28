@@ -12,9 +12,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.ResponseCookie;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Objects;
 
@@ -109,7 +113,8 @@ public class UserController {
     /**
      * 获取当前登录用户。
      *
-     * 从 JWT 拦截器写入的请求上下文中读取当前登录用户信息并返回。
+     * 从 JWT 拦截器写入的请求上下文中读取当前登录用户标识，
+     * 再从数据库查询并返回当前用户完整资料。
      *
      * @param request 当前请求
      * @return 当前登录用户信息
@@ -121,7 +126,54 @@ public class UserController {
         if (!(loginUser instanceof UserDTO userDTO)) {
             return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
         }
-        return HttpResult.success(userDTO);
+        return HttpResult.success(userService.getCurrentUserProfile(userDTO));
+    }
+
+    /**
+     * 修改当前用户头像。
+     *
+     * 接收图片文件，并将其二进制内容更新到当前用户的 avatar 字段。
+     *
+     * @param file    头像图片文件
+     * @param request 当前请求
+     * @return 修改结果
+     */
+    @Operation(summary = "修改头像")
+    @PostMapping(value = "/updateAvatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public HttpResult<String> updateAvatar(@RequestPart("file") MultipartFile file, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO)) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        return HttpResult.success(userService.updateAvatar(userDTO, file));
+    }
+
+    /**
+     * 获取当前用户头像。
+     *
+     * 从当前登录用户对应的数据库记录中读取 avatar 二进制数据，
+     * 并以图片二进制流的形式直接输出。
+     *
+     * @param request 当前请求
+     * @return 当前用户头像二进制流响应
+     */
+    @Operation(summary = "获取当前用户头像")
+    @GetMapping(value = "/getAvatar", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> getCurrentUserAvatar(HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        byte[] avatar = userService.getCurrentUserAvatar(userDTO);
+        if (avatar == null || avatar.length == 0) {
+            return ResponseEntity.status(HttpStatus.NO_CONTENT)
+                    .header("X-Message", "No avatar found")
+                    .build();
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .contentLength(avatar.length)
+                .body(avatar);
     }
 
     /**

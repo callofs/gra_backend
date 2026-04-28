@@ -50,7 +50,7 @@ public class UserDO implements Serializable {
      */
 
     @TableField("avatar")
-    private String avatar;
+    private byte[] avatar;
     /**
      * 手机号码
      */
