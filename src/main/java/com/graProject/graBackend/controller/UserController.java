@@ -1,17 +1,20 @@
 package com.graProject.graBackend.controller;
 
+import com.graProject.graBackend.common.exception.User.UserLoginException;
 import com.graProject.graBackend.common.result.HttpCode;
 import com.graProject.graBackend.common.result.HttpResult;
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
+import com.graProject.graBackend.dto.FileDownloadDTO;
 import com.graProject.graBackend.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -21,6 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -209,14 +213,40 @@ public class UserController {
         if (!(loginUser instanceof UserDTO userDTO)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        byte[] bytes = userService.getCurrentUserCertificationMaterial(userDTO);
-        if (bytes == null || bytes.length == 0) {
+        FileDownloadDTO download;
+        try {
+            download = userService.getCurrentUserCertificationMaterial(userDTO);
+        } catch (UserLoginException e) {
+            HttpStatus status;
+            try {
+                status = HttpStatus.valueOf(e.getHttpCode().getCode());
+            } catch (Exception ignore) {
+                status = HttpStatus.INTERNAL_SERVER_ERROR;
+            }
+            return ResponseEntity.status(status)
+                    .header("X-Message", e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("X-Message", "服务器内部错误")
+                    .build();
+        }
+        if (download == null || download.getBytes() == null || download.getBytes().length == 0) {
             return ResponseEntity.status(HttpStatus.NO_CONTENT)
                     .header("X-Message", "用户未上传认证材料")
                     .build();
         }
+        String filename = (download.getFilename() == null || download.getFilename().isBlank())
+                ? "certification"
+                : download.getFilename();
+        String contentType = (download.getContentType() == null || download.getContentType().isBlank())
+                ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+                : download.getContentType();
+        byte[] bytes = download.getBytes();
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString())
                 .contentLength(bytes.length)
                 .body(bytes);
     }

@@ -10,11 +10,13 @@ import com.graProject.graBackend.common.utils.UsernameBloomFilterUtil;
 import com.graProject.graBackend.common.utils.UploadFileUtil;
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
+import com.graProject.graBackend.dto.FileDownloadDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
 import com.graProject.graBackend.entity.UserDO;
 import com.graProject.graBackend.mapper.UserMapper;
 import com.graProject.graBackend.service.UserService;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -222,13 +224,13 @@ public class UserServiceImpl implements UserService {
      * @return 认证材料二进制数据（未上传时返回 null）
      */
     @Override
-    public byte[] getCurrentUserCertificationMaterial(UserDTO loginUser) {
+    public FileDownloadDTO getCurrentUserCertificationMaterial(UserDTO loginUser) {
         UserDO userDO = getCurrentUserEntity(loginUser);
         String objectKey = userDO.getCertificationMaterials();
         if (!StringUtils.hasText(objectKey)) {
             return null;
         }
-        return aliyunOssUtil.getObjectBytes(objectKey);
+        return buildFileDownload(objectKey);
     }
 
     /**
@@ -239,7 +241,7 @@ public class UserServiceImpl implements UserService {
      * @return 认证材料二进制数据（未上传时返回 null）
      */
     @Override
-    public byte[] getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId) {
+    public FileDownloadDTO getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId) {
         if (loginUser == null || loginUser.getId() == null) {
             throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
         }
@@ -263,7 +265,46 @@ public class UserServiceImpl implements UserService {
         if (!StringUtils.hasText(objectKey)) {
             return null;
         }
-        return aliyunOssUtil.getObjectBytes(objectKey);
+        return buildFileDownload(objectKey);
+    }
+
+    private FileDownloadDTO buildFileDownload(String objectKey) {
+        String filename = getFilenameFromObjectKey(objectKey);
+        String contentType = guessContentTypeByFilename(filename);
+        byte[] bytes = aliyunOssUtil.getObjectBytes(objectKey);
+        return FileDownloadDTO.builder()
+                .bytes(bytes)
+                .filename(filename)
+                .contentType(contentType)
+                .build();
+    }
+
+    private String getFilenameFromObjectKey(String objectKey) {
+        if (!StringUtils.hasText(objectKey)) {
+            return "file";
+        }
+        int slashIndex = objectKey.lastIndexOf('/');
+        if (slashIndex >= 0 && slashIndex + 1 < objectKey.length()) {
+            return objectKey.substring(slashIndex + 1);
+        }
+        return objectKey;
+    }
+
+    private String guessContentTypeByFilename(String filename) {
+        if (!StringUtils.hasText(filename)) {
+            return MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        }
+        String lower = filename.toLowerCase();
+        if (lower.endsWith(".pdf")) {
+            return MediaType.APPLICATION_PDF_VALUE;
+        }
+        if (lower.endsWith(".doc")) {
+            return "application/msword";
+        }
+        if (lower.endsWith(".docx")) {
+            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        }
+        return MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
     /**

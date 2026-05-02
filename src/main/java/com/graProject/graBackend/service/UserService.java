@@ -2,6 +2,7 @@ package com.graProject.graBackend.service;
 
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
+import com.graProject.graBackend.dto.FileDownloadDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
 import org.springframework.web.multipart.MultipartFile;
@@ -62,16 +63,16 @@ public interface UserService {
      * 获取当前登录用户的专家认证材料。
      *
      * @param loginUser 当前登录用户
-     * @return 认证材料二进制数据（未上传时返回 null）
+     * @return 认证材料下载信息（未上传时返回 null）
      */
-    byte[] getCurrentUserCertificationMaterial(UserDTO loginUser);
+    FileDownloadDTO getCurrentUserCertificationMaterial(UserDTO loginUser);
 
     /**
      * 管理员获取指定用户的专家认证材料。
      *
      * @param loginUser 当前登录用户（必须为管理员）
      * @param userId    被查看的用户 ID
-     * @return 认证材料二进制数据（未上传时返回 null）
+     * @return 认证材料下载信息（未上传时返回 null）
      */
-    byte[] getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId);
+    FileDownloadDTO getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId);
 }
