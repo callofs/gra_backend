@@ -32,6 +32,11 @@ public class RegisterRequestDto implements Serializable {
     private String phone;
 
     /**
+     * 用户角色 1=普通用户 2=专家 3=管理员。
+     */
+    private Integer role;
+
+    /**
      * 用户邮箱。
      */
     private String email;

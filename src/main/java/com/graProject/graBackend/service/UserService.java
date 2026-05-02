@@ -24,9 +24,10 @@ public interface UserService {
      * 对注册信息进行业务处理，成功时返回注册成功提示。
      *
      * @param registerRequestDto 注册请求
+     * @param certificationFile  专家认证材料文件（专家角色必传）
      * @return 注册结果
      */
-    String register(RegisterRequestDto registerRequestDto);
+    String register(RegisterRequestDto registerRequestDto, MultipartFile certificationFile);
 
     /**
      * 修改当前用户头像。
@@ -56,4 +57,21 @@ public interface UserService {
      * @return 头像二进制数据
      */
     byte[] getCurrentUserAvatar(UserDTO loginUser);
+
+    /**
+     * 获取当前登录用户的专家认证材料。
+     *
+     * @param loginUser 当前登录用户
+     * @return 认证材料二进制数据（未上传时返回 null）
+     */
+    byte[] getCurrentUserCertificationMaterial(UserDTO loginUser);
+
+    /**
+     * 管理员获取指定用户的专家认证材料。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @param userId    被查看的用户 ID
+     * @return 认证材料二进制数据（未上传时返回 null）
+     */
+    byte[] getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId);
 }

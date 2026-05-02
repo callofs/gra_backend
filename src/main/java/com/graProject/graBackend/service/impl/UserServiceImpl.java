@@ -2,10 +2,12 @@ package com.graProject.graBackend.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import cn.hutool.crypto.SmUtil;
-import com.graProject.graBackend.common.utils.JwtTokenUtil;
-import com.graProject.graBackend.common.utils.UsernameBloomFilterUtil;
 import com.graProject.graBackend.common.exception.User.UserLoginException;
 import com.graProject.graBackend.common.result.HttpCode;
+import com.graProject.graBackend.common.utils.AliyunOssUtil;
+import com.graProject.graBackend.common.utils.JwtTokenUtil;
+import com.graProject.graBackend.common.utils.UsernameBloomFilterUtil;
+import com.graProject.graBackend.common.utils.UploadFileUtil;
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
@@ -18,6 +20,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * 用户服务实现。
@@ -41,6 +46,11 @@ public class UserServiceImpl implements UserService {
     private final JwtTokenUtil jwtTokenUtil;
 
     /**
+     * 阿里云 OSS 工具。
+     */
+    private final AliyunOssUtil aliyunOssUtil;
+
+    /**
      * 构造方法。
      *
      * @param userMapper              用户 Mapper
@@ -48,10 +58,11 @@ public class UserServiceImpl implements UserService {
      * @param jwtTokenUtil            JWT 工具类
      */
     public UserServiceImpl(UserMapper userMapper, UsernameBloomFilterUtil usernameBloomFilterUtil,
-            JwtTokenUtil jwtTokenUtil) {
+            JwtTokenUtil jwtTokenUtil, AliyunOssUtil aliyunOssUtil) {
         this.userMapper = userMapper;
         this.usernameBloomFilterUtil = usernameBloomFilterUtil;
         this.jwtTokenUtil = jwtTokenUtil;
+        this.aliyunOssUtil = aliyunOssUtil;
     }
 
     /**
@@ -93,7 +104,7 @@ public class UserServiceImpl implements UserService {
                 .address(userDO.getAddress())
                 .role(userDO.getRole())
                 .creditScore(userDO.getCreditScore())
-                .certificationMaterials(userDO.getCertificationMaterials())
+                .certificationMaterials(null)
                 .status(userDO.getStatus())
                 .createTime(userDO.getCreateTime())
                 .updateTime(userDO.getUpdateTime())
@@ -117,12 +128,13 @@ public class UserServiceImpl implements UserService {
      * @return 注册结果
      */
     @Override
-    public String register(RegisterRequestDto registerRequestDto) {
+    public String register(RegisterRequestDto registerRequestDto, MultipartFile certificationFile) {
         if (registerRequestDto == null
                 || !StringUtils.hasText(registerRequestDto.getUsername())
                 || !StringUtils.hasText(registerRequestDto.getPassword())
-                || !StringUtils.hasText(registerRequestDto.getNickname())) {
-            throw new UserLoginException(HttpCode.BAD_REQUEST, "用户名、密码或昵称不能为空");
+                || !StringUtils.hasText(registerRequestDto.getNickname())
+                || !StringUtils.hasText(registerRequestDto.getPhone())) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "账号、昵称、密码或电话不能为空");
         }
 
         String username = registerRequestDto.getUsername().trim();
@@ -134,15 +146,42 @@ public class UserServiceImpl implements UserService {
             throw new UserLoginException(HttpCode.BAD_REQUEST, "用户名已存在");
         }
 
+        Integer role = registerRequestDto.getRole();
+        if (role == null) {
+            role = 1;
+        }
+        if (role != 1 && role != 2 && role != 3) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "角色参数不合法");
+        }
+
+        String certificationObjectKey = null;
+        byte[] certificationBytes = null;
+        if (role == 2) {
+            if (certificationFile == null || certificationFile.isEmpty()) {
+                throw new UserLoginException(HttpCode.BAD_REQUEST, "专家角色必须上传认证材料");
+            }
+            try {
+                certificationBytes = UploadFileUtil.readBytes(
+                        certificationFile,
+                        Set.of("pdf", "doc", "docx"),
+                        5 * 1024 * 1024L);
+            } catch (IllegalArgumentException e) {
+                throw new UserLoginException(HttpCode.BAD_REQUEST, e.getMessage());
+            } catch (IllegalStateException e) {
+                throw new UserLoginException(HttpCode.FAILED, e.getMessage());
+            }
+        }
+
         LocalDateTime now = LocalDateTime.now();
         UserDO userDO = new UserDO();
         userDO.setUsername(username);
         userDO.setPassword(SmUtil.sm3(registerRequestDto.getPassword().trim()));
         userDO.setNickname(registerRequestDto.getNickname().trim());
-        userDO.setPhone(registerRequestDto.getPhone());
+        userDO.setPhone(registerRequestDto.getPhone().trim());
         userDO.setEmail(registerRequestDto.getEmail());
-        userDO.setRole(1);
+        userDO.setRole(role);
         userDO.setCreditScore(100);
+        userDO.setCertificationMaterials(null);
         userDO.setStatus(0);
         userDO.setIsDelete(0);
         userDO.setCreateTime(now);
@@ -152,8 +191,79 @@ public class UserServiceImpl implements UserService {
             throw new UserLoginException(HttpCode.FAILED, "注册失败");
         }
 
+        if (role == 2) {
+            String ext = UploadFileUtil
+                    .getExtensionLower(certificationFile == null ? null : certificationFile.getOriginalFilename());
+            String dateFolder = now.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            certificationObjectKey = "certification/" + userDO.getId() + "/" + dateFolder + "/" + UUID.randomUUID()
+                    + "." + ext;
+            try {
+                aliyunOssUtil.putObject(certificationObjectKey, certificationBytes);
+            } catch (RuntimeException e) {
+                userMapper.deleteById(userDO.getId());
+                throw new UserLoginException(HttpCode.FAILED, "认证材料上传失败");
+            }
+
+            UserDO updateUser = new UserDO();
+            updateUser.setId(userDO.getId());
+            updateUser.setCertificationMaterials(certificationObjectKey);
+            updateUser.setUpdateTime(LocalDateTime.now());
+            userMapper.updateById(updateUser);
+        }
+
         usernameBloomFilterUtil.addUsername(username);
         return "注册成功";
+    }
+
+    /**
+     * 获取当前登录用户的专家认证材料。
+     *
+     * @param loginUser 当前登录用户
+     * @return 认证材料二进制数据（未上传时返回 null）
+     */
+    @Override
+    public byte[] getCurrentUserCertificationMaterial(UserDTO loginUser) {
+        UserDO userDO = getCurrentUserEntity(loginUser);
+        String objectKey = userDO.getCertificationMaterials();
+        if (!StringUtils.hasText(objectKey)) {
+            return null;
+        }
+        return aliyunOssUtil.getObjectBytes(objectKey);
+    }
+
+    /**
+     * 管理员获取指定用户的专家认证材料。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @param userId    被查看的用户 ID
+     * @return 认证材料二进制数据（未上传时返回 null）
+     */
+    @Override
+    public byte[] getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        if (loginUser.getRole() == null || loginUser.getRole() != 3) {
+            throw new UserLoginException(HttpCode.FORBIDDEN, HttpCode.FORBIDDEN.getMessage());
+        }
+        if (userId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "用户ID不能为空");
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getId, userId)
+                .eq(UserDO::getIsDelete, 0)
+                .last("limit 1");
+        UserDO userDO = userMapper.selectOne(wrapper);
+        if (userDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "用户不存在");
+        }
+
+        String objectKey = userDO.getCertificationMaterials();
+        if (!StringUtils.hasText(objectKey)) {
+            return null;
+        }
+        return aliyunOssUtil.getObjectBytes(objectKey);
     }
 
     /**
@@ -215,6 +325,7 @@ public class UserServiceImpl implements UserService {
         UserDO userDO = getCurrentUserEntity(loginUser);
         UserDTO userDTO = buildUserDTO(userDO);
         userDTO.setAvatar(null);
+        userDTO.setCertificationMaterials(null);
         return userDTO;
     }
 
