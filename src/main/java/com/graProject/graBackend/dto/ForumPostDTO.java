@@ -29,6 +29,12 @@ public class ForumPostDTO implements Serializable {
      */
 
     private String sectionCode;
+
+    /**
+     * 所属板块名称。
+     */
+
+    private String sectionName;
     /**
      * 贴文标题
      */
