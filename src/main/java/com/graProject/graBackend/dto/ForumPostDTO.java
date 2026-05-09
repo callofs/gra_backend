@@ -24,6 +24,16 @@ public class ForumPostDTO implements Serializable {
      */
 
     private Long userId;
+
+    /**
+     * 贴文作者昵称。
+     */
+    private String authorNickname;
+
+    /**
+     * 贴文作者头像（二进制）。
+     */
+    private byte[] authorAvatar;
     /**
      * 所属板块编码，逻辑关联t_dict.dict_code
      */

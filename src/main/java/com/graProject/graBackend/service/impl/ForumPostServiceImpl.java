@@ -7,8 +7,10 @@ import com.graProject.graBackend.common.utils.RichTextUtil;
 import com.graProject.graBackend.dto.ForumPostDTO;
 import com.graProject.graBackend.entity.DictDO;
 import com.graProject.graBackend.entity.ForumPostDO;
+import com.graProject.graBackend.entity.UserDO;
 import com.graProject.graBackend.mapper.DictMapper;
 import com.graProject.graBackend.mapper.ForumPostMapper;
+import com.graProject.graBackend.mapper.UserMapper;
 import com.graProject.graBackend.service.ForumPostService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 论坛贴文相关业务实现类。
@@ -42,14 +46,20 @@ public class ForumPostServiceImpl implements ForumPostService {
     private final DictMapper dictMapper;
 
     /**
+     * 用户表 Mapper，用于补全贴文作者信息。
+     */
+    private final UserMapper userMapper;
+
+    /**
      * 构造方法。
      *
      * @param forumPostMapper 贴文 Mapper
      * @param dictMapper      字典 Mapper
      */
-    public ForumPostServiceImpl(ForumPostMapper forumPostMapper, DictMapper dictMapper) {
+    public ForumPostServiceImpl(ForumPostMapper forumPostMapper, DictMapper dictMapper, UserMapper userMapper) {
         this.forumPostMapper = forumPostMapper;
         this.dictMapper = dictMapper;
+        this.userMapper = userMapper;
     }
 
     /**
@@ -129,6 +139,10 @@ public class ForumPostServiceImpl implements ForumPostService {
         }
         ForumPostDTO dto = new ForumPostDTO();
         BeanUtils.copyProperties(forumPostDO, dto);
+
+        if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
+            fillAuthor(dto, forumPostDO.getUserId());
+        }
         return dto;
     }
 
@@ -164,6 +178,7 @@ public class ForumPostServiceImpl implements ForumPostService {
         IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
 
         Map<String, String> sectionNameMap = resolveSectionNameMap(doPage.getRecords());
+        Map<Long, UserDO> authorMap = resolveAuthorMap(doPage.getRecords());
         List<ForumPostDTO> dtoRecords = new ArrayList<>();
         if (doPage.getRecords() != null) {
             for (ForumPostDO forumPostDO : doPage.getRecords()) {
@@ -175,6 +190,14 @@ public class ForumPostServiceImpl implements ForumPostService {
                 dto.setContent(RichTextUtil.toSummary(forumPostDO.getContent(), 200));
                 if (StringUtils.hasText(dto.getSectionCode())) {
                     dto.setSectionName(sectionNameMap.get(dto.getSectionCode()));
+                }
+
+                if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
+                    UserDO author = authorMap.get(forumPostDO.getUserId());
+                    if (author != null) {
+                        dto.setAuthorNickname(author.getNickname());
+                        dto.setAuthorAvatar(author.getAvatar());
+                    }
                 }
                 dtoRecords.add(dto);
             }
@@ -222,6 +245,59 @@ public class ForumPostServiceImpl implements ForumPostService {
             map.put(dict.getDictCode(), dict.getDictName());
         }
         return map;
+    }
+
+    /**
+     * 批量解析贴文作者信息。
+     *
+     * <p>
+     * 为避免 N+1 查询，提取当前页中所有非匿名贴的 userId 后批量查询用户表。
+     * </p>
+     *
+     * @param records 当前页贴文记录
+     * @return userId -> UserDO 映射
+     */
+    private Map<Long, UserDO> resolveAuthorMap(List<ForumPostDO> records) {
+        if (records == null || records.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> userIds = records.stream()
+                .filter(r -> r != null)
+                .filter(r -> r.getIsAnonymous() == null || r.getIsAnonymous() == 0)
+                .map(ForumPostDO::getUserId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .in(UserDO::getId, userIds);
+        List<UserDO> users = userMapper.selectList(wrapper);
+        if (users == null || users.isEmpty()) {
+            return Map.of();
+        }
+        return users.stream()
+                .filter(u -> u != null && u.getId() != null)
+                .collect(Collectors.toMap(UserDO::getId, Function.identity(), (a, b) -> a));
+    }
+
+    /**
+     * 填充贴文作者昵称与头像。
+     *
+     * @param dto    贴文 DTO
+     * @param userId 作者用户 ID
+     */
+    private void fillAuthor(ForumPostDTO dto, Long userId) {
+        if (dto == null || userId == null) {
+            return;
+        }
+        UserDO user = userMapper.selectById(userId);
+        if (user == null) {
+            return;
+        }
+        dto.setAuthorNickname(user.getNickname());
+        dto.setAuthorAvatar(user.getAvatar());
     }
 
     /**

@@ -38,16 +38,29 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 主题论坛贴文接口
+ * 主题论坛贴文接口。
  */
 @RestController
 @RequestMapping("/api/forumPost")
 @Tag(name = "论坛贴文接口")
 public class ForumPostController {
+
+    /**
+     * 论坛贴文服务。
+     */
     private final ForumPostService forumPostService;
 
+    /**
+     * 阿里云 OSS 工具类。
+     */
     private final AliyunOssUtil aliyunOssUtil;
 
+    /**
+     * 构造方法。
+     *
+     * @param forumPostService 论坛贴文服务
+     * @param aliyunOssUtil    阿里云 OSS 工具类
+     */
     public ForumPostController(ForumPostService forumPostService, AliyunOssUtil aliyunOssUtil) {
         this.forumPostService = forumPostService;
         this.aliyunOssUtil = aliyunOssUtil;
@@ -66,7 +79,7 @@ public class ForumPostController {
      * @return 发布结果
      */
     @Operation(summary = "发布贴文")
-    @PostMapping
+    @PostMapping("/uploadForum")
     public HttpResult<String> createForumPost(@RequestBody ForumPostCreateRequestDTO createRequestDTO,
             HttpServletRequest request) {
         Object loginUser = request.getAttribute("loginUser");
@@ -97,7 +110,7 @@ public class ForumPostController {
      * @return 贴文详情
      */
     @Operation(summary = "获取贴文详情")
-    @GetMapping("/{id}")
+    @GetMapping("/getForum/{id}")
     public HttpResult<ForumPostDTO> getForumPostDetail(@PathVariable("id") Long id, HttpServletRequest request) {
         Object loginUser = request.getAttribute("loginUser");
         if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
@@ -177,6 +190,16 @@ public class ForumPostController {
         return result;
     }
 
+    /**
+     * 论坛贴文图片预览（后端代理 OSS 私有读）。
+     *
+     * <p>
+     * 由于 OSS 为私有读，前端无法直接访问，因此通过后端代理拉取并返回图片二进制流。
+     * </p>
+     *
+     * @param objectKey OSS 对象 Key
+     * @return 图片二进制流响应
+     */
     @Operation(summary = "论坛贴文图片预览（后端代理 OSS 私有读）")
     @GetMapping(value = "/images/view")
     public ResponseEntity<byte[]> viewPostImage(@RequestParam("key") String objectKey) {
@@ -199,6 +222,12 @@ public class ForumPostController {
                 .body(bytes);
     }
 
+    /**
+     * 根据文件后缀猜测图片的 MediaType。
+     *
+     * @param objectKey OSS 对象 Key
+     * @return 图片 MediaType
+     */
     private static MediaType guessImageMediaType(String objectKey) {
         String ext = UploadFileUtil.getExtensionLower(objectKey);
         return switch (ext) {
@@ -210,6 +239,12 @@ public class ForumPostController {
         };
     }
 
+    /**
+     * WangEditor v5 上传失败响应体。
+     *
+     * @param message 错误信息
+     * @return WangEditor 约定的失败返回结构
+     */
     private static Map<String, Object> wangEditorError(String message) {
         Map<String, Object> result = new HashMap<>();
         result.put("errno", 1);
