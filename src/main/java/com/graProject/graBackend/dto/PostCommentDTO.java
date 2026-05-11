@@ -29,6 +29,16 @@ public class PostCommentDTO implements Serializable {
      */
 
     private Long userId;
+
+    /**
+     * 评论作者昵称。
+     */
+    private String authorNickname;
+
+    /**
+     * 评论作者头像（二进制）。
+     */
+    private byte[] authorAvatar;
     /**
      * 父评论ID，二级回复关联
      */
