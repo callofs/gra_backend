@@ -371,6 +371,33 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * 根据用户 ID 获取用户资料。
+     *
+     * @param userId 用户 ID
+     * @return 用户资料；不存在时返回 null
+     */
+    @Override
+    public UserDTO getUserProfileById(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getId, userId)
+                .eq(UserDO::getIsDelete, 0)
+                .last("limit 1");
+        UserDO userDO = userMapper.selectOne(wrapper);
+        if (userDO == null) {
+            return null;
+        }
+
+        UserDTO userDTO = buildUserDTO(userDO);
+        userDTO.setAvatar(null);
+        userDTO.setCertificationMaterials(null);
+        return userDTO;
+    }
+
+    /**
      * 获取当前登录用户头像二进制数据。
      *
      * @param loginUser 当前登录用户

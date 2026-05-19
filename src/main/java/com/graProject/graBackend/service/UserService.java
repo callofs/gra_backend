@@ -52,6 +52,14 @@ public interface UserService {
     UserDTO getCurrentUserProfile(UserDTO loginUser);
 
     /**
+     * 根据用户 ID 获取用户资料。
+     *
+     * @param userId 用户 ID
+     * @return 用户资料；用户不存在时返回 null
+     */
+    UserDTO getUserProfileById(Long userId);
+
+    /**
      * 获取当前登录用户头像二进制数据。
      *
      * @param loginUser 当前登录用户

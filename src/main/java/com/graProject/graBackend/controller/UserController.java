@@ -156,6 +156,22 @@ public class UserController {
     }
 
     /**
+     * 根据用户 ID 获取用户信息。
+     *
+     * @param userId 用户 ID
+     * @return 用户信息
+     */
+    @Operation(summary = "根据用户ID获取用户信息")
+    @GetMapping("/getUserById/{userId}")
+    public HttpResult<UserDTO> getUserProfileById(@PathVariable("userId") Long userId) {
+        UserDTO userDTO = userService.getUserProfileById(userId);
+        if (userDTO == null) {
+            return HttpResult.of(HttpCode.NOT_FOUND, "用户不存在", null);
+        }
+        return HttpResult.success(userDTO);
+    }
+
+    /**
      * 修改当前用户头像。
      * 接收图片文件，并将其二进制内容更新到当前用户的 avatar 字段。
      *
