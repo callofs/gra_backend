@@ -3,8 +3,11 @@ package com.graProject.graBackend.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.graProject.graBackend.common.result.HttpCode;
+import com.graProject.graBackend.common.exception.User.UserLoginException;
 import com.graProject.graBackend.common.utils.RichTextUtil;
 import com.graProject.graBackend.dto.ForumPostDTO;
+import com.graProject.graBackend.dto.UserDTO;
 import com.graProject.graBackend.entity.DictDO;
 import com.graProject.graBackend.entity.ForumPostDO;
 import com.graProject.graBackend.entity.UserDO;
@@ -209,6 +212,81 @@ public class ForumPostServiceImpl implements ForumPostService {
     }
 
     /**
+     * 分页查询管理员可审核的贴文列表。
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param status  贴文状态（可选）
+     * @param keyword 标题关键字（可选）
+     * @return 分页结果
+     */
+    @Override
+    public IPage<ForumPostDTO> listForumPostsForAudit(long page, long size, Integer status, String keyword) {
+        long current = Math.max(1, page);
+        long pageSize = Math.min(Math.max(1, size), 50);
+
+        LambdaQueryWrapper<ForumPostDO> wrapper = new LambdaQueryWrapper<ForumPostDO>()
+                .orderByDesc(ForumPostDO::getCreateTime)
+                .orderByDesc(ForumPostDO::getId);
+        if (status != null) {
+            wrapper.eq(ForumPostDO::getStatus, status);
+        }
+        if (StringUtils.hasText(keyword)) {
+            wrapper.like(ForumPostDO::getTitle, keyword.trim());
+        }
+
+        IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
+        return buildForumPostPage(doPage, false);
+    }
+
+    /**
+     * 审核论坛贴文。
+     *
+     * @param postId 贴文 ID
+     * @param status 审核后的状态 1=已发布 2=已驳回
+     * @return 审核结果提示
+     */
+    @Override
+    public String auditForumPost(Long postId, Integer status) {
+        if (postId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "贴文ID不能为空");
+        }
+        if (status == null || (status != 1 && status != 2)) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "审核状态不合法");
+        }
+        ForumPostDO forumPostDO = selectPostById(postId);
+        if (forumPostDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "贴文不存在");
+        }
+        forumPostDO.setStatus(status);
+        forumPostDO.setUpdateTime(LocalDateTime.now());
+        forumPostMapper.updateById(forumPostDO);
+        return status == 1 ? "审核通过" : "审核驳回成功";
+    }
+
+    /**
+     * 分页查询当前登录用户发布的贴文审核状态。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    @Override
+    public IPage<ForumPostDTO> listMyForumPosts(UserDTO loginUser, long page, long size) {
+        Long userId = validateLoginUser(loginUser);
+        long current = Math.max(1, page);
+        long pageSize = Math.min(Math.max(1, size), 50);
+
+        LambdaQueryWrapper<ForumPostDO> wrapper = new LambdaQueryWrapper<ForumPostDO>()
+                .eq(ForumPostDO::getUserId, userId)
+                .orderByDesc(ForumPostDO::getCreateTime)
+                .orderByDesc(ForumPostDO::getId);
+        IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
+        return buildForumPostPage(doPage, true);
+    }
+
+    /**
      * 批量解析板块编码对应的板块名称。
      *
      * <p>
@@ -280,6 +358,58 @@ public class ForumPostServiceImpl implements ForumPostService {
         return users.stream()
                 .filter(u -> u != null && u.getId() != null)
                 .collect(Collectors.toMap(UserDO::getId, Function.identity(), (a, b) -> a));
+    }
+
+    /**
+     * 将贴文分页结果转换为 DTO 分页结果。
+     *
+     * @param doPage     原始贴文分页结果
+     * @param useSummary 是否将正文转换为摘要
+     * @return DTO 分页结果
+     */
+    private IPage<ForumPostDTO> buildForumPostPage(IPage<ForumPostDO> doPage, boolean useSummary) {
+        Map<String, String> sectionNameMap = resolveSectionNameMap(doPage.getRecords());
+        Map<Long, UserDO> authorMap = resolveAuthorMap(doPage.getRecords());
+        List<ForumPostDTO> dtoRecords = new ArrayList<>();
+        if (doPage.getRecords() != null) {
+            for (ForumPostDO forumPostDO : doPage.getRecords()) {
+                if (forumPostDO == null) {
+                    continue;
+                }
+                ForumPostDTO dto = new ForumPostDTO();
+                BeanUtils.copyProperties(forumPostDO, dto);
+                if (useSummary) {
+                    dto.setContent(RichTextUtil.toSummary(forumPostDO.getContent(), 200));
+                }
+                if (StringUtils.hasText(dto.getSectionCode())) {
+                    dto.setSectionName(sectionNameMap.get(dto.getSectionCode()));
+                }
+                if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
+                    UserDO author = authorMap.get(forumPostDO.getUserId());
+                    if (author != null) {
+                        dto.setAuthorNickname(author.getNickname());
+                        dto.setAuthorAvatar(author.getAvatar());
+                    }
+                }
+                dtoRecords.add(dto);
+            }
+        }
+        Page<ForumPostDTO> dtoPage = new Page<>(doPage.getCurrent(), doPage.getSize(), doPage.getTotal());
+        dtoPage.setRecords(dtoRecords);
+        return dtoPage;
+    }
+
+    /**
+     * 校验登录用户。
+     *
+     * @param loginUser 当前登录用户
+     * @return 登录用户 ID
+     */
+    private Long validateLoginUser(UserDTO loginUser) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        return loginUser.getId();
     }
 
     /**

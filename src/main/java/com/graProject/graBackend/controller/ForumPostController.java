@@ -1,9 +1,11 @@
 package com.graProject.graBackend.controller;
 
+import com.graProject.graBackend.common.annotation.HasPermission;
 import com.graProject.graBackend.common.utils.AliyunOssUtil;
 import com.graProject.graBackend.common.utils.UploadFileUtil;
 import com.graProject.graBackend.common.result.HttpCode;
 import com.graProject.graBackend.common.result.HttpResult;
+import com.graProject.graBackend.dto.ForumPostAuditRequestDTO;
 import com.graProject.graBackend.dto.ForumPostCreateRequestDTO;
 import com.graProject.graBackend.dto.ForumPostDTO;
 import com.graProject.graBackend.dto.UserDTO;
@@ -144,6 +146,64 @@ public class ForumPostController {
             @RequestParam(value = "sectionCode", required = false) String sectionCode,
             @RequestParam(value = "keyword", required = false) String keyword) {
         return HttpResult.success(forumPostService.listForumPostSummaries(page, size, sectionCode, keyword));
+    }
+
+    /**
+     * 管理员分页查询贴文审核列表。
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param status  贴文状态（可选）
+     * @param keyword 标题关键字（可选）
+     * @return 贴文审核分页列表
+     */
+    @HasPermission(roles = { 3 })
+    @Operation(summary = "管理员分页查询贴文审核列表")
+    @GetMapping("/admin/audit/list")
+    public HttpResult<IPage<ForumPostDTO>> listForumPostsForAudit(
+            @RequestParam(value = "page", defaultValue = "1") long page,
+            @RequestParam(value = "size", defaultValue = "10") long size,
+            @RequestParam(value = "status", required = false) Integer status,
+            @RequestParam(value = "keyword", required = false) String keyword) {
+        return HttpResult.success(forumPostService.listForumPostsForAudit(page, size, status, keyword));
+    }
+
+    /**
+     * 管理员审核贴文。
+     *
+     * @param requestDTO 审核请求参数
+     * @return 审核结果
+     */
+    @HasPermission(roles = { 3 })
+    @Operation(summary = "管理员审核贴文")
+    @PostMapping("/admin/audit")
+    public HttpResult<String> auditForumPost(@RequestBody ForumPostAuditRequestDTO requestDTO) {
+        if (requestDTO == null) {
+            return HttpResult.of(HttpCode.BAD_REQUEST, "审核参数不能为空", null);
+        }
+        return HttpResult.success(forumPostService.auditForumPost(requestDTO.getPostId(), requestDTO.getStatus()));
+    }
+
+    /**
+     * 查询当前登录用户发布的贴文审核状态。
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param request 当前请求
+     * @return 当前用户贴文审核状态分页列表
+     */
+    @HasPermission(roles = { 1, 2, 3 })
+    @Operation(summary = "查询当前用户贴文审核状态")
+    @GetMapping("/my/audit-status")
+    public HttpResult<IPage<ForumPostDTO>> listMyForumPosts(
+            @RequestParam(value = "page", defaultValue = "1") long page,
+            @RequestParam(value = "size", defaultValue = "10") long size,
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        return HttpResult.success(forumPostService.listMyForumPosts(userDTO, page, size));
     }
 
     /**

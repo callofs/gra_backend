@@ -1,5 +1,6 @@
 package com.graProject.graBackend.service;
 
+import com.graProject.graBackend.dto.UserDTO;
 import com.graProject.graBackend.entity.ForumPostDO;
 import com.graProject.graBackend.dto.ForumPostDTO;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -48,4 +49,38 @@ public interface ForumPostService {
      * @return 分页结果
      */
     IPage<ForumPostDTO> listForumPostSummaries(long page, long size, String sectionCode, String keyword);
+
+    /**
+     * 分页查询管理员可审核的贴文列表。
+     *
+     * <p>
+     * 管理员可按贴文状态和标题关键字筛选所有贴文，并查看其审核状态。
+     * </p>
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param status  贴文状态（可选）
+     * @param keyword 标题关键字（可选）
+     * @return 分页结果
+     */
+    IPage<ForumPostDTO> listForumPostsForAudit(long page, long size, Integer status, String keyword);
+
+    /**
+     * 审核论坛贴文。
+     *
+     * @param postId 贴文 ID
+     * @param status 审核后的状态 1=已发布 2=已驳回
+     * @return 审核结果提示
+     */
+    String auditForumPost(Long postId, Integer status);
+
+    /**
+     * 分页查询当前登录用户发布的贴文审核状态。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    IPage<ForumPostDTO> listMyForumPosts(UserDTO loginUser, long page, long size);
 }
