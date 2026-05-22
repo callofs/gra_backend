@@ -118,7 +118,7 @@ public class ForumPostController {
         if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
             return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
         }
-        ForumPostDTO dto = forumPostService.getForumPostDetail(id);
+        ForumPostDTO dto = forumPostService.getForumPostDetail(id, userDTO);
         if (dto == null) {
             return HttpResult.of(HttpCode.NOT_FOUND, "贴文不存在", null);
         }
@@ -144,8 +144,11 @@ public class ForumPostController {
             @RequestParam(value = "page", defaultValue = "1") long page,
             @RequestParam(value = "size", defaultValue = "10") long size,
             @RequestParam(value = "sectionCode", required = false) String sectionCode,
-            @RequestParam(value = "keyword", required = false) String keyword) {
-        return HttpResult.success(forumPostService.listForumPostSummaries(page, size, sectionCode, keyword));
+            @RequestParam(value = "keyword", required = false) String keyword,
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        UserDTO userDTO = loginUser instanceof UserDTO user ? user : null;
+        return HttpResult.success(forumPostService.listForumPostSummaries(page, size, sectionCode, keyword, userDTO));
     }
 
     /**
@@ -204,6 +207,88 @@ public class ForumPostController {
             return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
         }
         return HttpResult.success(forumPostService.listMyForumPosts(userDTO, page, size));
+    }
+
+    /**
+     * 收藏贴文。
+     *
+     * @param postId  贴文 ID
+     * @param request 当前请求
+     * @return 操作结果
+     */
+    @HasPermission(roles = { 1, 2, 3 })
+    @Operation(summary = "收藏贴文")
+    @PostMapping("/collect")
+    public HttpResult<String> collectForumPost(@RequestParam("postId") Long postId, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        forumPostService.collectForumPost(userDTO, postId);
+        return HttpResult.success("收藏成功");
+    }
+
+    /**
+     * 取消收藏贴文。
+     *
+     * @param postId  贴文 ID
+     * @param request 当前请求
+     * @return 操作结果
+     */
+    @HasPermission(roles = { 1, 2, 3 })
+    @Operation(summary = "取消收藏贴文")
+    @PostMapping("/uncollect")
+    public HttpResult<String> uncollectForumPost(@RequestParam("postId") Long postId, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        forumPostService.uncollectForumPost(userDTO, postId);
+        return HttpResult.success("取消收藏成功");
+    }
+
+    /**
+     * 分页查询当前登录用户的收藏贴文列表。
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param request 当前请求
+     * @return 收藏贴文分页列表
+     */
+    @HasPermission(roles = { 1, 2, 3 })
+    @Operation(summary = "分页查询我的收藏贴文列表")
+    @GetMapping("/my/collections")
+    public HttpResult<IPage<ForumPostDTO>> listMyCollectedForumPosts(
+            @RequestParam(value = "page", defaultValue = "1") long page,
+            @RequestParam(value = "size", defaultValue = "10") long size,
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        return HttpResult.success(forumPostService.listMyCollectedForumPosts(userDTO, page, size));
+    }
+
+    /**
+     * 分页查询当前登录用户的浏览历史列表。
+     *
+     * @param page    页码（从 1 开始）
+     * @param size    每页条数
+     * @param request 当前请求
+     * @return 浏览历史分页列表
+     */
+    @HasPermission(roles = { 1, 2, 3 })
+    @Operation(summary = "分页查询我的浏览历史列表")
+    @GetMapping("/my/browse-history")
+    public HttpResult<IPage<ForumPostDTO>> listMyBrowseHistory(
+            @RequestParam(value = "page", defaultValue = "1") long page,
+            @RequestParam(value = "size", defaultValue = "10") long size,
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        return HttpResult.success(forumPostService.listMyBrowseHistory(userDTO, page, size));
     }
 
     /**

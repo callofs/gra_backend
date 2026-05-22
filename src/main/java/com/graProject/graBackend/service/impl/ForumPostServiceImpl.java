@@ -54,15 +54,29 @@ public class ForumPostServiceImpl implements ForumPostService {
     private final UserMapper userMapper;
 
     /**
+     * 贴文收藏 Mapper。
+     */
+    private final com.graProject.graBackend.mapper.PostCollectionMapper postCollectionMapper;
+
+    /**
+     * 用户浏览记录 Mapper。
+     */
+    private final com.graProject.graBackend.mapper.UserBrowseMapper userBrowseMapper;
+
+    /**
      * 构造方法。
      *
      * @param forumPostMapper 贴文 Mapper
      * @param dictMapper      字典 Mapper
      */
-    public ForumPostServiceImpl(ForumPostMapper forumPostMapper, DictMapper dictMapper, UserMapper userMapper) {
+    public ForumPostServiceImpl(ForumPostMapper forumPostMapper, DictMapper dictMapper, UserMapper userMapper,
+            com.graProject.graBackend.mapper.PostCollectionMapper postCollectionMapper,
+            com.graProject.graBackend.mapper.UserBrowseMapper userBrowseMapper) {
         this.forumPostMapper = forumPostMapper;
         this.dictMapper = dictMapper;
         this.userMapper = userMapper;
+        this.postCollectionMapper = postCollectionMapper;
+        this.userBrowseMapper = userBrowseMapper;
     }
 
     /**
@@ -131,17 +145,22 @@ public class ForumPostServiceImpl implements ForumPostService {
     /**
      * 获取贴文详情。
      *
-     * @param postId 贴文 ID
+     * @param postId    贴文 ID
+     * @param loginUser 当前登录用户
      * @return 贴文详情 DTO；不存在时返回 null
      */
     @Override
-    public ForumPostDTO getForumPostDetail(Long postId) {
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public ForumPostDTO getForumPostDetail(Long postId, UserDTO loginUser) {
         ForumPostDO forumPostDO = selectPostById(postId);
         if (forumPostDO == null) {
             return null;
         }
+        Long userId = validateLoginUser(loginUser);
+        recordBrowseHistory(userId, postId);
         ForumPostDTO dto = new ForumPostDTO();
         BeanUtils.copyProperties(forumPostDO, dto);
+        dto.setCollected(isCollectedByUser(userId, postId));
 
         if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
             fillAuthor(dto, forumPostDO.getUserId());
@@ -160,10 +179,12 @@ public class ForumPostServiceImpl implements ForumPostService {
      * @param size        每页条数（服务端会做上限保护）
      * @param sectionCode 板块编码（可选）
      * @param keyword     标题关键字（可选）
+     * @param loginUser   当前登录用户（可为空）
      * @return 分页摘要结果
      */
     @Override
-    public IPage<ForumPostDTO> listForumPostSummaries(long page, long size, String sectionCode, String keyword) {
+    public IPage<ForumPostDTO> listForumPostSummaries(long page, long size, String sectionCode, String keyword,
+            UserDTO loginUser) {
         long current = Math.max(1, page);
         long pageSize = Math.min(Math.max(1, size), 50);
 
@@ -179,35 +200,32 @@ public class ForumPostServiceImpl implements ForumPostService {
         }
 
         IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
+        return buildForumPostPage(doPage, true, loginUser == null ? null : loginUser.getId());
+    }
 
-        Map<String, String> sectionNameMap = resolveSectionNameMap(doPage.getRecords());
-        Map<Long, UserDO> authorMap = resolveAuthorMap(doPage.getRecords());
-        List<ForumPostDTO> dtoRecords = new ArrayList<>();
-        if (doPage.getRecords() != null) {
-            for (ForumPostDO forumPostDO : doPage.getRecords()) {
-                if (forumPostDO == null) {
-                    continue;
-                }
-                ForumPostDTO dto = new ForumPostDTO();
-                BeanUtils.copyProperties(forumPostDO, dto);
-                dto.setContent(RichTextUtil.toSummary(forumPostDO.getContent(), 200));
-                if (StringUtils.hasText(dto.getSectionCode())) {
-                    dto.setSectionName(sectionNameMap.get(dto.getSectionCode()));
-                }
-
-                if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
-                    UserDO author = authorMap.get(forumPostDO.getUserId());
-                    if (author != null) {
-                        dto.setAuthorNickname(author.getNickname());
-                        dto.setAuthorAvatar(author.getAvatar());
-                    }
-                }
-                dtoRecords.add(dto);
-            }
+    /**
+     * 根据贴文 ID 顺序构建分页结果。
+     *
+     * @param current     当前页码
+     * @param size        分页大小
+     * @param total       总记录数
+     * @param postIds     贴文 ID 列表
+     * @param useSummary  是否将正文转换为摘要
+     * @param loginUserId 当前登录用户 ID（可为空）
+     * @return DTO 分页结果
+     */
+    private IPage<ForumPostDTO> buildForumPostPageFromPostIds(long current, long size, long total, List<Long> postIds,
+            boolean useSummary, Long loginUserId) {
+        List<ForumPostDO> forumPosts = listPostsByIdsInOrder(postIds);
+        Page<ForumPostDTO> dtoPage = new Page<>(current, size, total);
+        if (forumPosts.isEmpty()) {
+            dtoPage.setRecords(java.util.Collections.emptyList());
+            return dtoPage;
         }
-
-        Page<ForumPostDTO> dtoPage = new Page<>(doPage.getCurrent(), doPage.getSize(), doPage.getTotal());
-        dtoPage.setRecords(dtoRecords);
+        Page<ForumPostDO> doPage = new Page<>(current, size, total);
+        doPage.setRecords(forumPosts);
+        IPage<ForumPostDTO> result = buildForumPostPage(doPage, useSummary, loginUserId);
+        dtoPage.setRecords(result.getRecords());
         return dtoPage;
     }
 
@@ -236,7 +254,7 @@ public class ForumPostServiceImpl implements ForumPostService {
         }
 
         IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
-        return buildForumPostPage(doPage, false);
+        return buildForumPostPage(doPage, false, null);
     }
 
     /**
@@ -283,7 +301,114 @@ public class ForumPostServiceImpl implements ForumPostService {
                 .orderByDesc(ForumPostDO::getCreateTime)
                 .orderByDesc(ForumPostDO::getId);
         IPage<ForumPostDO> doPage = forumPostMapper.selectPage(new Page<>(current, pageSize), wrapper);
-        return buildForumPostPage(doPage, true);
+        return buildForumPostPage(doPage, true, userId);
+    }
+
+    /**
+     * 收藏贴文。
+     *
+     * @param loginUser 当前登录用户
+     * @param postId    贴文 ID
+     */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void collectForumPost(UserDTO loginUser, Long postId) {
+        Long userId = validateLoginUser(loginUser);
+        ForumPostDO forumPostDO = requirePublishedPost(postId);
+        LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO> existsWrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO>()
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getUserId, userId)
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getPostId, forumPostDO.getId());
+        if (postCollectionMapper.selectCount(existsWrapper) > 0) {
+            return;
+        }
+        com.graProject.graBackend.entity.PostCollectionDO collectionDO = new com.graProject.graBackend.entity.PostCollectionDO();
+        collectionDO.setUserId(userId);
+        collectionDO.setPostId(forumPostDO.getId());
+        collectionDO.setCreateTime(LocalDateTime.now());
+        postCollectionMapper.insert(collectionDO);
+        forumPostMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ForumPostDO>()
+                        .eq(ForumPostDO::getId, forumPostDO.getId())
+                        .setSql("collect_count = collect_count + 1"));
+    }
+
+    /**
+     * 取消收藏贴文。
+     *
+     * @param loginUser 当前登录用户
+     * @param postId    贴文 ID
+     */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void uncollectForumPost(UserDTO loginUser, Long postId) {
+        Long userId = validateLoginUser(loginUser);
+        if (postId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "贴文ID不能为空");
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO>()
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getUserId, userId)
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getPostId, postId);
+        int deleted = postCollectionMapper.delete(wrapper);
+        if (deleted <= 0) {
+            return;
+        }
+        forumPostMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ForumPostDO>()
+                        .eq(ForumPostDO::getId, postId)
+                        .setSql("collect_count = CASE WHEN collect_count > 0 THEN collect_count - 1 ELSE 0 END"));
+    }
+
+    /**
+     * 分页查询当前登录用户的收藏贴文列表。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    @Override
+    public IPage<ForumPostDTO> listMyCollectedForumPosts(UserDTO loginUser, long page, long size) {
+        Long userId = validateLoginUser(loginUser);
+        long current = Math.max(1, page);
+        long pageSize = Math.min(Math.max(1, size), 50);
+        LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO>()
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getUserId, userId)
+                .orderByDesc(com.graProject.graBackend.entity.PostCollectionDO::getCreateTime)
+                .orderByDesc(com.graProject.graBackend.entity.PostCollectionDO::getId);
+        IPage<com.graProject.graBackend.entity.PostCollectionDO> collectionPage = postCollectionMapper.selectPage(
+                new Page<>(current, pageSize),
+                wrapper);
+        return buildForumPostPageFromPostIds(collectionPage.getCurrent(), collectionPage.getSize(),
+                collectionPage.getTotal(),
+                collectionPage.getRecords().stream().map(com.graProject.graBackend.entity.PostCollectionDO::getPostId)
+                        .collect(Collectors.toList()),
+                true, userId);
+    }
+
+    /**
+     * 分页查询当前登录用户的浏览历史列表。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    @Override
+    public IPage<ForumPostDTO> listMyBrowseHistory(UserDTO loginUser, long page, long size) {
+        Long userId = validateLoginUser(loginUser);
+        long current = Math.max(1, page);
+        long pageSize = Math.min(Math.max(1, size), 50);
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserBrowseDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserBrowseDO>()
+                .eq(com.graProject.graBackend.entity.UserBrowseDO::getUserId, userId)
+                .eq(com.graProject.graBackend.entity.UserBrowseDO::getBrowseType, 1)
+                .orderByDesc(com.graProject.graBackend.entity.UserBrowseDO::getBrowseTime)
+                .orderByDesc(com.graProject.graBackend.entity.UserBrowseDO::getId);
+        IPage<com.graProject.graBackend.entity.UserBrowseDO> browsePage = userBrowseMapper
+                .selectPage(new Page<>(current, pageSize), wrapper);
+        return buildForumPostPageFromPostIds(browsePage.getCurrent(), browsePage.getSize(), browsePage.getTotal(),
+                browsePage.getRecords().stream().map(com.graProject.graBackend.entity.UserBrowseDO::getRelateId)
+                        .collect(Collectors.toList()),
+                true, userId);
     }
 
     /**
@@ -361,15 +486,65 @@ public class ForumPostServiceImpl implements ForumPostService {
     }
 
     /**
+     * 批量解析当前登录用户已收藏的贴文 ID 集合。
+     *
+     * @param loginUserId 当前登录用户 ID（可为空）
+     * @param records     当前页贴文记录
+     * @return 已收藏贴文 ID 集合
+     */
+    private Set<Long> resolveCollectedPostIds(Long loginUserId, List<ForumPostDO> records) {
+        if (loginUserId == null || records == null || records.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        Set<Long> postIds = records.stream()
+                .filter(post -> post != null && post.getId() != null)
+                .map(ForumPostDO::getId)
+                .collect(Collectors.toSet());
+        if (postIds.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO>()
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getUserId, loginUserId)
+                .in(com.graProject.graBackend.entity.PostCollectionDO::getPostId, postIds);
+        List<com.graProject.graBackend.entity.PostCollectionDO> collections = postCollectionMapper.selectList(wrapper);
+        if (collections == null || collections.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        return collections.stream()
+                .map(com.graProject.graBackend.entity.PostCollectionDO::getPostId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 判断当前登录用户是否已收藏指定贴文。
+     *
+     * @param loginUserId 当前登录用户 ID
+     * @param postId      贴文 ID
+     * @return 是否已收藏
+     */
+    private boolean isCollectedByUser(Long loginUserId, Long postId) {
+        if (loginUserId == null || postId == null) {
+            return false;
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.PostCollectionDO>()
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getUserId, loginUserId)
+                .eq(com.graProject.graBackend.entity.PostCollectionDO::getPostId, postId);
+        return postCollectionMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
      * 将贴文分页结果转换为 DTO 分页结果。
      *
-     * @param doPage     原始贴文分页结果
-     * @param useSummary 是否将正文转换为摘要
+     * @param doPage      原始贴文分页结果
+     * @param useSummary  是否将正文转换为摘要
+     * @param loginUserId 当前登录用户 ID（可为空）
      * @return DTO 分页结果
      */
-    private IPage<ForumPostDTO> buildForumPostPage(IPage<ForumPostDO> doPage, boolean useSummary) {
+    private IPage<ForumPostDTO> buildForumPostPage(IPage<ForumPostDO> doPage, boolean useSummary, Long loginUserId) {
         Map<String, String> sectionNameMap = resolveSectionNameMap(doPage.getRecords());
         Map<Long, UserDO> authorMap = resolveAuthorMap(doPage.getRecords());
+        Set<Long> collectedPostIds = resolveCollectedPostIds(loginUserId, doPage.getRecords());
         List<ForumPostDTO> dtoRecords = new ArrayList<>();
         if (doPage.getRecords() != null) {
             for (ForumPostDO forumPostDO : doPage.getRecords()) {
@@ -391,6 +566,7 @@ public class ForumPostServiceImpl implements ForumPostService {
                         dto.setAuthorAvatar(author.getAvatar());
                     }
                 }
+                dto.setCollected(collectedPostIds.contains(forumPostDO.getId()));
                 dtoRecords.add(dto);
             }
         }
@@ -410,6 +586,95 @@ public class ForumPostServiceImpl implements ForumPostService {
             throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
         }
         return loginUser.getId();
+    }
+
+    /**
+     * 校验贴文是否存在且已发布。
+     *
+     * @param postId 贴文 ID
+     * @return 贴文记录
+     */
+    private ForumPostDO requirePublishedPost(Long postId) {
+        if (postId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "贴文ID不能为空");
+        }
+        ForumPostDO forumPostDO = selectPostById(postId);
+        if (forumPostDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "贴文不存在");
+        }
+        if (forumPostDO.getStatus() == null || forumPostDO.getStatus() != 1) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "当前贴文不可收藏");
+        }
+        return forumPostDO;
+    }
+
+    /**
+     * 记录用户浏览贴文历史，并累加浏览量。
+     *
+     * @param userId 浏览用户 ID
+     * @param postId 贴文 ID
+     */
+    private void recordBrowseHistory(Long userId, Long postId) {
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserBrowseDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserBrowseDO>()
+                .eq(com.graProject.graBackend.entity.UserBrowseDO::getUserId, userId)
+                .eq(com.graProject.graBackend.entity.UserBrowseDO::getBrowseType, 1)
+                .eq(com.graProject.graBackend.entity.UserBrowseDO::getRelateId, postId)
+                .last("limit 1");
+        com.graProject.graBackend.entity.UserBrowseDO userBrowseDO = userBrowseMapper.selectOne(wrapper);
+        LocalDateTime now = LocalDateTime.now();
+        if (userBrowseDO == null) {
+            userBrowseDO = new com.graProject.graBackend.entity.UserBrowseDO();
+            userBrowseDO.setUserId(userId);
+            userBrowseDO.setBrowseType(1);
+            userBrowseDO.setRelateId(postId);
+            userBrowseDO.setBrowseTime(now);
+            userBrowseMapper.insert(userBrowseDO);
+        } else {
+            userBrowseDO.setBrowseTime(now);
+            userBrowseMapper.updateById(userBrowseDO);
+        }
+        forumPostMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ForumPostDO>()
+                        .eq(ForumPostDO::getId, postId)
+                        .setSql("view_count = view_count + 1"));
+    }
+
+    /**
+     * 按输入顺序批量查询贴文。
+     *
+     * @param postIds 贴文 ID 列表
+     * @return 有序贴文列表
+     */
+    private List<ForumPostDO> listPostsByIdsInOrder(List<Long> postIds) {
+        if (postIds == null || postIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<Long> filteredIds = postIds.stream().filter(java.util.Objects::nonNull).toList();
+        if (filteredIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        LambdaQueryWrapper<ForumPostDO> wrapper = new LambdaQueryWrapper<ForumPostDO>()
+                .in(ForumPostDO::getId, new java.util.HashSet<>(filteredIds));
+        List<ForumPostDO> posts = forumPostMapper.selectList(wrapper);
+        if (posts == null || posts.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        Map<Long, ForumPostDO> postMap = posts.stream()
+                .filter(post -> post != null && post.getId() != null)
+                .collect(Collectors.toMap(ForumPostDO::getId, Function.identity(), (a, b) -> a));
+        List<ForumPostDO> orderedPosts = new ArrayList<>();
+        Set<Long> addedIds = new java.util.HashSet<>();
+        for (Long postId : filteredIds) {
+            if (addedIds.contains(postId)) {
+                continue;
+            }
+            ForumPostDO post = postMap.get(postId);
+            if (post != null) {
+                orderedPosts.add(post);
+                addedIds.add(postId);
+            }
+        }
+        return orderedPosts;
     }
 
     /**

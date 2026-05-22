@@ -91,6 +91,11 @@ public class ForumPostDTO implements Serializable {
 
     private Integer collectCount;
     /**
+     * 当前登录用户是否已收藏。
+     */
+
+    private Boolean collected;
+    /**
      * 贴文状态 0=待审核 1=已发布 2=已驳回 3=已下架
      */
 

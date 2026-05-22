@@ -30,10 +30,11 @@ public interface ForumPostService {
      * 用于贴文详情页展示，通常需要登录后访问。
      * </p>
      *
-     * @param postId 贴文 ID
+     * @param postId    贴文 ID
+     * @param loginUser 当前登录用户
      * @return 贴文详情；不存在时返回 null
      */
-    ForumPostDTO getForumPostDetail(Long postId);
+    ForumPostDTO getForumPostDetail(Long postId, UserDTO loginUser);
 
     /**
      * 分页查询贴文摘要列表。
@@ -46,9 +47,11 @@ public interface ForumPostService {
      * @param size        每页条数
      * @param sectionCode 板块编码（可选）
      * @param keyword     标题关键字（可选）
+     * @param loginUser   当前登录用户（可为空）
      * @return 分页结果
      */
-    IPage<ForumPostDTO> listForumPostSummaries(long page, long size, String sectionCode, String keyword);
+    IPage<ForumPostDTO> listForumPostSummaries(long page, long size, String sectionCode, String keyword,
+            UserDTO loginUser);
 
     /**
      * 分页查询管理员可审核的贴文列表。
@@ -83,4 +86,40 @@ public interface ForumPostService {
      * @return 分页结果
      */
     IPage<ForumPostDTO> listMyForumPosts(UserDTO loginUser, long page, long size);
+
+    /**
+     * 收藏贴文。
+     *
+     * @param loginUser 当前登录用户
+     * @param postId    贴文 ID
+     */
+    void collectForumPost(UserDTO loginUser, Long postId);
+
+    /**
+     * 取消收藏贴文。
+     *
+     * @param loginUser 当前登录用户
+     * @param postId    贴文 ID
+     */
+    void uncollectForumPost(UserDTO loginUser, Long postId);
+
+    /**
+     * 分页查询当前登录用户的收藏贴文列表。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    IPage<ForumPostDTO> listMyCollectedForumPosts(UserDTO loginUser, long page, long size);
+
+    /**
+     * 分页查询当前登录用户的浏览历史列表。
+     *
+     * @param loginUser 当前登录用户
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
+     * @return 分页结果
+     */
+    IPage<ForumPostDTO> listMyBrowseHistory(UserDTO loginUser, long page, long size);
 }
