@@ -163,8 +163,10 @@ public class UserController {
      */
     @Operation(summary = "根据用户ID获取用户信息")
     @GetMapping("/getUserById/{userId}")
-    public HttpResult<UserDTO> getUserProfileById(@PathVariable("userId") Long userId) {
-        UserDTO userDTO = userService.getUserProfileById(userId);
+    public HttpResult<UserDTO> getUserProfileById(@PathVariable("userId") Long userId, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        UserDTO currentUser = loginUser instanceof UserDTO userDTO ? userDTO : null;
+        UserDTO userDTO = userService.getUserProfileById(currentUser, userId);
         if (userDTO == null) {
             return HttpResult.of(HttpCode.NOT_FOUND, "用户不存在", null);
         }
@@ -265,6 +267,74 @@ public class UserController {
                         ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString())
                 .contentLength(bytes.length)
                 .body(bytes);
+    }
+
+    /**
+     * 关注指定用户。
+     *
+     * @param followedId 被关注用户 ID
+     * @param request    当前请求
+     * @return 操作结果
+     */
+    @Operation(summary = "关注用户")
+    @PostMapping("/follow")
+    public HttpResult<String> followUser(@RequestParam("followedId") Long followedId, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        userService.followUser(userDTO, followedId);
+        return HttpResult.success("关注成功");
+    }
+
+    /**
+     * 取消关注指定用户。
+     *
+     * @param followedId 被取消关注用户 ID
+     * @param request    当前请求
+     * @return 操作结果
+     */
+    @Operation(summary = "取消关注用户")
+    @PostMapping("/unfollow")
+    public HttpResult<String> unfollowUser(@RequestParam("followedId") Long followedId, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        userService.unfollowUser(userDTO, followedId);
+        return HttpResult.success("取消关注成功");
+    }
+
+    /**
+     * 获取当前登录用户关注的用户列表。
+     *
+     * @param request 当前请求
+     * @return 关注用户列表
+     */
+    @Operation(summary = "获取我的关注用户列表")
+    @GetMapping("/my/follows")
+    public HttpResult<java.util.List<UserDTO>> listMyFollowedUsers(HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        return HttpResult.success(userService.listMyFollowedUsers(userDTO));
+    }
+
+    /**
+     * 获取当前登录用户的粉丝列表。
+     *
+     * @param request 当前请求
+     * @return 粉丝用户列表
+     */
+    @Operation(summary = "获取我的粉丝列表")
+    @GetMapping("/my/followers")
+    public HttpResult<java.util.List<UserDTO>> listMyFollowers(HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO) || userDTO.getId() == null) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        return HttpResult.success(userService.listMyFollowers(userDTO));
     }
 
     /**

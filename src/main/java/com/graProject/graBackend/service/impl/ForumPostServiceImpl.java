@@ -64,6 +64,11 @@ public class ForumPostServiceImpl implements ForumPostService {
     private final com.graProject.graBackend.mapper.UserBrowseMapper userBrowseMapper;
 
     /**
+     * 用户关注 Mapper。
+     */
+    private final com.graProject.graBackend.mapper.UserFollowMapper userFollowMapper;
+
+    /**
      * 构造方法。
      *
      * @param forumPostMapper 贴文 Mapper
@@ -71,12 +76,14 @@ public class ForumPostServiceImpl implements ForumPostService {
      */
     public ForumPostServiceImpl(ForumPostMapper forumPostMapper, DictMapper dictMapper, UserMapper userMapper,
             com.graProject.graBackend.mapper.PostCollectionMapper postCollectionMapper,
-            com.graProject.graBackend.mapper.UserBrowseMapper userBrowseMapper) {
+            com.graProject.graBackend.mapper.UserBrowseMapper userBrowseMapper,
+            com.graProject.graBackend.mapper.UserFollowMapper userFollowMapper) {
         this.forumPostMapper = forumPostMapper;
         this.dictMapper = dictMapper;
         this.userMapper = userMapper;
         this.postCollectionMapper = postCollectionMapper;
         this.userBrowseMapper = userBrowseMapper;
+        this.userFollowMapper = userFollowMapper;
     }
 
     /**
@@ -161,6 +168,7 @@ public class ForumPostServiceImpl implements ForumPostService {
         ForumPostDTO dto = new ForumPostDTO();
         BeanUtils.copyProperties(forumPostDO, dto);
         dto.setCollected(isCollectedByUser(userId, postId));
+        dto.setFollowed(isFollowedByUser(userId, forumPostDO.getUserId()));
 
         if (forumPostDO.getIsAnonymous() == null || forumPostDO.getIsAnonymous() == 0) {
             fillAuthor(dto, forumPostDO.getUserId());
@@ -534,6 +542,54 @@ public class ForumPostServiceImpl implements ForumPostService {
     }
 
     /**
+     * 批量解析当前登录用户已关注的作者 ID 集合。
+     *
+     * @param loginUserId 当前登录用户 ID（可为空）
+     * @param records     当前页贴文记录
+     * @return 已关注作者 ID 集合
+     */
+    private Set<Long> resolveFollowedAuthorIds(Long loginUserId, List<ForumPostDO> records) {
+        if (loginUserId == null || records == null || records.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        Set<Long> authorIds = records.stream()
+                .filter(post -> post != null && post.getUserId() != null)
+                .map(ForumPostDO::getUserId)
+                .collect(Collectors.toSet());
+        if (authorIds.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, loginUserId)
+                .in(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, authorIds);
+        List<com.graProject.graBackend.entity.UserFollowDO> follows = userFollowMapper.selectList(wrapper);
+        if (follows == null || follows.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        return follows.stream()
+                .map(com.graProject.graBackend.entity.UserFollowDO::getFollowedId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 判断当前登录用户是否已关注指定作者。
+     *
+     * @param loginUserId 当前登录用户 ID
+     * @param authorId    作者用户 ID
+     * @return 是否已关注
+     */
+    private boolean isFollowedByUser(Long loginUserId, Long authorId) {
+        if (loginUserId == null || authorId == null || loginUserId.equals(authorId)) {
+            return false;
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, loginUserId)
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, authorId);
+        return userFollowMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
      * 将贴文分页结果转换为 DTO 分页结果。
      *
      * @param doPage      原始贴文分页结果
@@ -545,6 +601,7 @@ public class ForumPostServiceImpl implements ForumPostService {
         Map<String, String> sectionNameMap = resolveSectionNameMap(doPage.getRecords());
         Map<Long, UserDO> authorMap = resolveAuthorMap(doPage.getRecords());
         Set<Long> collectedPostIds = resolveCollectedPostIds(loginUserId, doPage.getRecords());
+        Set<Long> followedAuthorIds = resolveFollowedAuthorIds(loginUserId, doPage.getRecords());
         List<ForumPostDTO> dtoRecords = new ArrayList<>();
         if (doPage.getRecords() != null) {
             for (ForumPostDO forumPostDO : doPage.getRecords()) {
@@ -567,6 +624,7 @@ public class ForumPostServiceImpl implements ForumPostService {
                     }
                 }
                 dto.setCollected(collectedPostIds.contains(forumPostDO.getId()));
+                dto.setFollowed(followedAuthorIds.contains(forumPostDO.getUserId()));
                 dtoRecords.add(dto);
             }
         }

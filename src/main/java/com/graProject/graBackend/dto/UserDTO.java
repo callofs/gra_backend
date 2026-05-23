@@ -77,6 +77,21 @@ public class UserDTO implements Serializable {
 
     private String certificationMaterials;
     /**
+     * 关注数。
+     */
+
+    private Integer followCount;
+    /**
+     * 粉丝数。
+     */
+
+    private Integer followerCount;
+    /**
+     * 当前登录用户是否已关注该用户。
+     */
+
+    private Boolean followed;
+    /**
      * 账号状态 0=正常 1=禁用 2=待审核
      */
 

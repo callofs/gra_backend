@@ -96,6 +96,11 @@ public class ForumPostDTO implements Serializable {
 
     private Boolean collected;
     /**
+     * 当前登录用户是否已关注作者。
+     */
+
+    private Boolean followed;
+    /**
      * 贴文状态 0=待审核 1=已发布 2=已驳回 3=已下架
      */
 

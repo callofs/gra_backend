@@ -54,10 +54,43 @@ public interface UserService {
     /**
      * 根据用户 ID 获取用户资料。
      *
-     * @param userId 用户 ID
+     * @param loginUser 当前登录用户，可为空
+     * @param userId    用户 ID
      * @return 用户资料；用户不存在时返回 null
      */
-    UserDTO getUserProfileById(Long userId);
+    UserDTO getUserProfileById(UserDTO loginUser, Long userId);
+
+    /**
+     * 关注指定用户。
+     *
+     * @param loginUser  当前登录用户
+     * @param followedId 被关注用户 ID
+     */
+    void followUser(UserDTO loginUser, Long followedId);
+
+    /**
+     * 取消关注指定用户。
+     *
+     * @param loginUser  当前登录用户
+     * @param followedId 被取消关注用户 ID
+     */
+    void unfollowUser(UserDTO loginUser, Long followedId);
+
+    /**
+     * 获取当前登录用户关注的用户列表。
+     *
+     * @param loginUser 当前登录用户
+     * @return 关注用户列表
+     */
+    java.util.List<UserDTO> listMyFollowedUsers(UserDTO loginUser);
+
+    /**
+     * 获取当前登录用户的粉丝列表。
+     *
+     * @param loginUser 当前登录用户
+     * @return 粉丝用户列表
+     */
+    java.util.List<UserDTO> listMyFollowers(UserDTO loginUser);
 
     /**
      * 获取当前登录用户头像二进制数据。

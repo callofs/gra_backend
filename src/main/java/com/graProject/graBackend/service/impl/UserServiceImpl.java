@@ -38,6 +38,11 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
 
     /**
+     * 用户关注 Mapper。
+     */
+    private final com.graProject.graBackend.mapper.UserFollowMapper userFollowMapper;
+
+    /**
      * 用户名布隆过滤器工具。
      */
     private final UsernameBloomFilterUtil usernameBloomFilterUtil;
@@ -59,9 +64,12 @@ public class UserServiceImpl implements UserService {
      * @param usernameBloomFilterUtil 用户名布隆过滤器工具
      * @param jwtTokenUtil            JWT 工具类
      */
-    public UserServiceImpl(UserMapper userMapper, UsernameBloomFilterUtil usernameBloomFilterUtil,
+    public UserServiceImpl(UserMapper userMapper,
+            com.graProject.graBackend.mapper.UserFollowMapper userFollowMapper,
+            UsernameBloomFilterUtil usernameBloomFilterUtil,
             JwtTokenUtil jwtTokenUtil, AliyunOssUtil aliyunOssUtil) {
         this.userMapper = userMapper;
+        this.userFollowMapper = userFollowMapper;
         this.usernameBloomFilterUtil = usernameBloomFilterUtil;
         this.jwtTokenUtil = jwtTokenUtil;
         this.aliyunOssUtil = aliyunOssUtil;
@@ -364,20 +372,18 @@ public class UserServiceImpl implements UserService {
     @Override
     public UserDTO getCurrentUserProfile(UserDTO loginUser) {
         UserDO userDO = getCurrentUserEntity(loginUser);
-        UserDTO userDTO = buildUserDTO(userDO);
-        userDTO.setAvatar(null);
-        userDTO.setCertificationMaterials(null);
-        return userDTO;
+        return buildUserProfileDTO(userDO);
     }
 
     /**
      * 根据用户 ID 获取用户资料。
      *
-     * @param userId 用户 ID
+     * @param loginUser 当前登录用户，可为空
+     * @param userId    用户 ID
      * @return 用户资料；不存在时返回 null
      */
     @Override
-    public UserDTO getUserProfileById(Long userId) {
+    public UserDTO getUserProfileById(UserDTO loginUser, Long userId) {
         if (userId == null) {
             return null;
         }
@@ -391,10 +397,155 @@ public class UserServiceImpl implements UserService {
             return null;
         }
 
-        UserDTO userDTO = buildUserDTO(userDO);
-        userDTO.setAvatar(null);
-        userDTO.setCertificationMaterials(null);
+        UserDTO userDTO = buildUserProfileDTO(userDO);
+        Long loginUserId = loginUser == null ? null : loginUser.getId();
+        userDTO.setFollowed(isFollowedByUser(loginUserId, userId));
         return userDTO;
+    }
+
+    /**
+     * 关注指定用户。
+     *
+     * @param loginUser  当前登录用户
+     * @param followedId 被关注用户 ID
+     */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void followUser(UserDTO loginUser, Long followedId) {
+        Long followerId = requireLoginUserId(loginUser);
+        validateFollowTarget(followerId, followedId);
+
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> existsWrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, followerId)
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, followedId);
+        if (userFollowMapper.selectCount(existsWrapper) > 0) {
+            return;
+        }
+
+        com.graProject.graBackend.entity.UserFollowDO record = new com.graProject.graBackend.entity.UserFollowDO();
+        record.setFollowerId(followerId);
+        record.setFollowedId(followedId);
+        record.setCreateTime(LocalDateTime.now());
+        userFollowMapper.insert(record);
+    }
+
+    /**
+     * 取消关注指定用户。
+     *
+     * @param loginUser  当前登录用户
+     * @param followedId 被取消关注用户 ID
+     */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void unfollowUser(UserDTO loginUser, Long followedId) {
+        Long followerId = requireLoginUserId(loginUser);
+        if (followedId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "被取消关注用户ID不能为空");
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, followerId)
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, followedId);
+        userFollowMapper.delete(wrapper);
+    }
+
+    /**
+     * 获取当前登录用户关注的用户列表。
+     *
+     * @param loginUser 当前登录用户
+     * @return 关注用户列表
+     */
+    @Override
+    public java.util.List<UserDTO> listMyFollowedUsers(UserDTO loginUser) {
+        Long followerId = requireLoginUserId(loginUser);
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, followerId)
+                .orderByDesc(com.graProject.graBackend.entity.UserFollowDO::getCreateTime);
+        java.util.List<com.graProject.graBackend.entity.UserFollowDO> followRecords = userFollowMapper
+                .selectList(wrapper);
+        if (followRecords == null || followRecords.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.List<Long> followedIds = followRecords.stream()
+                .map(com.graProject.graBackend.entity.UserFollowDO::getFollowedId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (followedIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        LambdaQueryWrapper<UserDO> userWrapper = new LambdaQueryWrapper<UserDO>()
+                .in(UserDO::getId, followedIds)
+                .eq(UserDO::getIsDelete, 0);
+        java.util.List<UserDO> userDOS = userMapper.selectList(userWrapper);
+        if (userDOS == null || userDOS.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.Map<Long, UserDO> userMap = userDOS.stream()
+                .filter(user -> user != null && user.getId() != null)
+                .collect(java.util.stream.Collectors.toMap(UserDO::getId, user -> user, (left, right) -> left));
+
+        java.util.List<UserDTO> result = new java.util.ArrayList<>();
+        for (Long followedId : followedIds) {
+            UserDO userDO = userMap.get(followedId);
+            if (userDO == null) {
+                continue;
+            }
+            result.add(buildUserProfileDTO(userDO));
+        }
+        return result;
+    }
+
+    /**
+     * 获取当前登录用户的粉丝列表。
+     *
+     * @param loginUser 当前登录用户
+     * @return 粉丝用户列表
+     */
+    @Override
+    public java.util.List<UserDTO> listMyFollowers(UserDTO loginUser) {
+        Long followedId = requireLoginUserId(loginUser);
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, followedId)
+                .orderByDesc(com.graProject.graBackend.entity.UserFollowDO::getCreateTime);
+        java.util.List<com.graProject.graBackend.entity.UserFollowDO> followerRecords = userFollowMapper
+                .selectList(wrapper);
+        if (followerRecords == null || followerRecords.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.List<Long> followerIds = followerRecords.stream()
+                .map(com.graProject.graBackend.entity.UserFollowDO::getFollowerId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (followerIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        LambdaQueryWrapper<UserDO> userWrapper = new LambdaQueryWrapper<UserDO>()
+                .in(UserDO::getId, followerIds)
+                .eq(UserDO::getIsDelete, 0);
+        java.util.List<UserDO> userDOS = userMapper.selectList(userWrapper);
+        if (userDOS == null || userDOS.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.Map<Long, UserDO> userMap = userDOS.stream()
+                .filter(user -> user != null && user.getId() != null)
+                .collect(java.util.stream.Collectors.toMap(UserDO::getId, user -> user, (left, right) -> left));
+
+        java.util.List<UserDTO> result = new java.util.ArrayList<>();
+        for (Long followerId : followerIds) {
+            UserDO userDO = userMap.get(followerId);
+            if (userDO == null) {
+                continue;
+            }
+            result.add(buildUserProfileDTO(userDO));
+        }
+        return result;
     }
 
     /**
@@ -421,6 +572,42 @@ public class UserServiceImpl implements UserService {
                 .eq(UserDO::getIsDelete, 0)
                 .last("limit 1");
         return userMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 获取当前登录用户 ID。
+     *
+     * @param loginUser 当前登录用户
+     * @return 当前登录用户 ID
+     */
+    private Long requireLoginUserId(UserDTO loginUser) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        return loginUser.getId();
+    }
+
+    /**
+     * 校验关注目标是否合法。
+     *
+     * @param followerId 关注者 ID
+     * @param followedId 被关注者 ID
+     */
+    private void validateFollowTarget(Long followerId, Long followedId) {
+        if (followedId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "被关注用户ID不能为空");
+        }
+        if (followerId.equals(followedId)) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "不能关注自己");
+        }
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getId, followedId)
+                .eq(UserDO::getIsDelete, 0)
+                .last("limit 1");
+        UserDO userDO = userMapper.selectOne(wrapper);
+        if (userDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "用户不存在");
+        }
     }
 
     /**
@@ -470,5 +657,67 @@ public class UserServiceImpl implements UserService {
                 .isDelete(userDO.getIsDelete())
                 .password(null)
                 .build();
+    }
+
+    /**
+     * 构建用于对外返回的用户资料 DTO。
+     *
+     * @param userDO 用户实体
+     * @return 用户资料 DTO
+     */
+    private UserDTO buildUserProfileDTO(UserDO userDO) {
+        UserDTO userDTO = buildUserDTO(userDO);
+        userDTO.setAvatar(null);
+        userDTO.setCertificationMaterials(null);
+        userDTO.setFollowCount(countFollowByFollowerId(userDO == null ? null : userDO.getId()));
+        userDTO.setFollowerCount(countFollowByFollowedId(userDO == null ? null : userDO.getId()));
+        return userDTO;
+    }
+
+    /**
+     * 统计指定用户关注数。
+     *
+     * @param followerId 关注者 ID
+     * @return 关注数
+     */
+    private Integer countFollowByFollowerId(Long followerId) {
+        if (followerId == null) {
+            return 0;
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, followerId);
+        return Math.toIntExact(userFollowMapper.selectCount(wrapper));
+    }
+
+    /**
+     * 统计指定用户粉丝数。
+     *
+     * @param followedId 被关注者 ID
+     * @return 粉丝数
+     */
+    private Integer countFollowByFollowedId(Long followedId) {
+        if (followedId == null) {
+            return 0;
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, followedId);
+        return Math.toIntExact(userFollowMapper.selectCount(wrapper));
+    }
+
+    /**
+     * 判断当前登录用户是否已关注指定用户。
+     *
+     * @param loginUserId  当前登录用户 ID
+     * @param targetUserId 目标用户 ID
+     * @return 是否已关注
+     */
+    private boolean isFollowedByUser(Long loginUserId, Long targetUserId) {
+        if (loginUserId == null || targetUserId == null || loginUserId.equals(targetUserId)) {
+            return false;
+        }
+        LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO> wrapper = new LambdaQueryWrapper<com.graProject.graBackend.entity.UserFollowDO>()
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, loginUserId)
+                .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, targetUserId);
+        return userFollowMapper.selectCount(wrapper) > 0;
     }
 }
