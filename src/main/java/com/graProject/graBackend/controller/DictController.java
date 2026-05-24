@@ -44,6 +44,17 @@ public class DictController {
     }
 
     /**
+     * 获取所有系统模块列表。
+     *
+     * @return 所有模块列表
+     */
+    @Operation(summary = "获取所有系统模块列表")
+    @GetMapping("/getAllDictList")
+    public HttpResult<List<DictDTO>> listAllDict() {
+        return HttpResult.success(dictService.listAll());
+    }
+
+    /**
      * 新增系统模块（管理员）。
      *
      * @param createRequestDTO 新增参数
@@ -65,7 +76,7 @@ public class DictController {
      */
     @HasPermission(roles = { 3 })
     @Operation(summary = "修改系统模块（管理员）")
-    @PutMapping("/updateDict/{id}")
+    @PostMapping("/updateDict/{id}")
     public HttpResult<DictDTO> updateDict(@PathVariable("id") Long id,
             @RequestBody DictUpdateRequestDTO updateRequestDTO) {
         DictDTO dto = dictService.updateDict(id, updateRequestDTO);

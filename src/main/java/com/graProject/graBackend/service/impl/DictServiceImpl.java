@@ -58,6 +58,33 @@ public class DictServiceImpl implements DictService {
     }
 
     /**
+     * 获取所有模块列表。
+     *
+     * @return 所有模块列表
+     */
+    @Override
+    public List<DictDTO> listAll() {
+        LambdaQueryWrapper<DictDO> wrapper = new LambdaQueryWrapper<DictDO>()
+                .orderByAsc(DictDO::getDictType)
+                .orderByAsc(DictDO::getSort)
+                .orderByAsc(DictDO::getId);
+        List<DictDO> records = dictMapper.selectList(wrapper);
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
+        List<DictDTO> result = new ArrayList<>();
+        for (DictDO record : records) {
+            if (record == null) {
+                continue;
+            }
+            DictDTO dto = new DictDTO();
+            BeanUtils.copyProperties(record, dto);
+            result.add(dto);
+        }
+        return result;
+    }
+
+    /**
      * 修改字典项（管理员）。
      *
      * @param id               字典项 ID

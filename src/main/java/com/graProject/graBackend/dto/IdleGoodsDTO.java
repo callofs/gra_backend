@@ -30,6 +30,21 @@ public class IdleGoodsDTO implements Serializable {
 
     private String goodsTypeCode;
     /**
+     * 物品类型名称。
+     */
+
+    private String goodsTypeName;
+    /**
+     * 发布者昵称。
+     */
+
+    private String publisherNickname;
+    /**
+     * 发布者头像（二进制）。
+     */
+
+    private byte[] publisherAvatar;
+    /**
      * 物品标题
      */
 

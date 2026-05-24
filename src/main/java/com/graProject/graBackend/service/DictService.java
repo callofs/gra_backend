@@ -20,6 +20,13 @@ public interface DictService {
     List<DictDTO> listByType(String dictType);
 
     /**
+     * 获取所有模块列表。
+     *
+     * @return 所有模块列表
+     */
+    List<DictDTO> listAll();
+
+    /**
      * 修改字典项（管理员）。
      *
      * @param id               字典项 ID
