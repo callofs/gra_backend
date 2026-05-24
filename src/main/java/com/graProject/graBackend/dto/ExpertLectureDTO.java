@@ -89,4 +89,10 @@ public class ExpertLectureDTO implements Serializable {
      */
 
     private Integer isDelete;
+
+    /**
+     * 当前登录用户是否已预约该讲座
+     */
+
+    private Boolean signedUp;
 }

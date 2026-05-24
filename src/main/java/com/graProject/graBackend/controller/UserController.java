@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -171,6 +172,22 @@ public class UserController {
             return HttpResult.of(HttpCode.NOT_FOUND, "用户不存在", null);
         }
         return HttpResult.success(userDTO);
+    }
+
+    /**
+     * 获取专家用户列表。
+     *
+     * @param request 当前请求
+     * @return 专家用户列表
+     */
+    @Operation(summary = "获取专家用户列表")
+    @GetMapping("/get/experts")
+    public HttpResult<List<UserDTO>> listExpertUsers(
+            HttpServletRequest request,
+            @RequestParam(value = "limit", defaultValue = "10") Integer limit) {
+        Object loginUser = request.getAttribute("loginUser");
+        UserDTO currentUser = loginUser instanceof UserDTO userDTO ? userDTO : null;
+        return HttpResult.success(userService.listExpertUsers(currentUser, limit));
     }
 
     /**

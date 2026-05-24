@@ -61,6 +61,15 @@ public interface UserService {
     UserDTO getUserProfileById(UserDTO loginUser, Long userId);
 
     /**
+     * 获取专家用户列表。
+     *
+     * @param loginUser 当前登录用户，可为空
+     * @param limit     获取数量限制，默认10
+     * @return 专家用户列表
+     */
+    java.util.List<UserDTO> listExpertUsers(UserDTO loginUser, Integer limit);
+
+    /**
      * 关注指定用户。
      *
      * @param loginUser  当前登录用户

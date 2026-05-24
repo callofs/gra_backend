@@ -404,6 +404,39 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
+     * 获取专家用户列表。
+     *
+     * @param loginUser 当前登录用户，可为空
+     * @param limit     获取数量限制，默认10
+     * @return 专家用户列表
+     */
+    @Override
+    public java.util.List<UserDTO> listExpertUsers(UserDTO loginUser, Integer limit) {
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getRole, 2)
+                .eq(UserDO::getIsDelete, 0)
+                .orderByDesc(UserDO::getCreateTime)
+                .orderByDesc(UserDO::getId)
+                .last("limit " + (limit != null && limit > 0 ? limit : 10));
+        java.util.List<UserDO> userDOS = userMapper.selectList(wrapper);
+        if (userDOS == null || userDOS.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        Long loginUserId = loginUser == null ? null : loginUser.getId();
+        java.util.List<UserDTO> result = new java.util.ArrayList<>();
+        for (UserDO userDO : userDOS) {
+            if (userDO == null || userDO.getId() == null) {
+                continue;
+            }
+            UserDTO userDTO = buildUserProfileDTO(userDO);
+            userDTO.setFollowed(isFollowedByUser(loginUserId, userDO.getId()));
+            result.add(userDTO);
+        }
+        return result;
+    }
+
+    /**
      * 关注指定用户。
      *
      * @param loginUser  当前登录用户
@@ -667,7 +700,7 @@ public class UserServiceImpl implements UserService {
      */
     private UserDTO buildUserProfileDTO(UserDO userDO) {
         UserDTO userDTO = buildUserDTO(userDO);
-        userDTO.setAvatar(null);
+        // userDTO.setAvatar(null);
         userDTO.setCertificationMaterials(null);
         userDTO.setFollowCount(countFollowByFollowerId(userDO == null ? null : userDO.getId()));
         userDTO.setFollowerCount(countFollowByFollowedId(userDO == null ? null : userDO.getId()));
