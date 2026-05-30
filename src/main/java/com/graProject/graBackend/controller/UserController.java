@@ -8,6 +8,7 @@ import com.graProject.graBackend.dto.LoginResponseDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
 import com.graProject.graBackend.dto.FileDownloadDTO;
+import com.graProject.graBackend.dto.ExpertCertificationMaterialDTO;
 import com.graProject.graBackend.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -287,6 +288,59 @@ public class UserController {
     }
 
     /**
+     * 管理员获取指定用户的专家认证材料。
+     *
+     * @param userId  被查看的用户 ID
+     * @param request 当前请求
+     * @return 认证材料二进制流响应
+     */
+    @Operation(summary = "管理员获取指定用户认证材料")
+    @GetMapping(value = "/admin/certificationMaterial/{userId}", produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public ResponseEntity<byte[]> getUserCertificationMaterialByAdmin(@PathVariable("userId") Long userId,
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        FileDownloadDTO download;
+        try {
+            download = userService.getUserCertificationMaterialByAdmin(userDTO, userId);
+        } catch (UserLoginException e) {
+            HttpStatus status;
+            try {
+                status = HttpStatus.valueOf(e.getHttpCode().getCode());
+            } catch (Exception ignore) {
+                status = HttpStatus.INTERNAL_SERVER_ERROR;
+            }
+            return ResponseEntity.status(status)
+                    .header("X-Message", e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .header("X-Message", "服务器内部错误")
+                    .build();
+        }
+        if (download == null || download.getBytes() == null || download.getBytes().length == 0) {
+            return ResponseEntity.status(HttpStatus.NO_CONTENT)
+                    .header("X-Message", "用户未上传认证材料")
+                    .build();
+        }
+        String filename = (download.getFilename() == null || download.getFilename().isBlank())
+                ? "certification"
+                : download.getFilename();
+        String contentType = (download.getContentType() == null || download.getContentType().isBlank())
+                ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+                : download.getContentType();
+        byte[] bytes = download.getBytes();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build().toString())
+                .contentLength(bytes.length)
+                .body(bytes);
+    }
+
+    /**
      * 关注指定用户。
      *
      * @param followedId 被关注用户 ID
@@ -352,6 +406,55 @@ public class UserController {
             return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
         }
         return HttpResult.success(userService.listMyFollowers(userDTO));
+    }
+
+    /**
+     * 管理员修改用户角色。
+     *
+     * @param userId  被修改的用户 ID
+     * @param role    新角色：1=普通家长 2=认证专家 3=平台管理员
+     * @param request 当前请求
+     * @return 操作结果
+     */
+    @Operation(summary = "管理员修改用户角色")
+    @PostMapping("/admin/role/{userId}")
+    public HttpResult<String> updateUserRoleByAdmin(@PathVariable("userId") Long userId,
+            @RequestParam("role") Integer role, HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO)) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        try {
+            userService.updateUserRoleByAdmin(userDTO, userId, role);
+            return HttpResult.success("角色修改成功");
+        } catch (UserLoginException e) {
+            return HttpResult.of(e.getHttpCode(), e.getMessage(), null);
+        } catch (Exception e) {
+            return HttpResult.fail("角色修改失败");
+        }
+    }
+
+    /**
+     * 管理员获取专家认证材料列表。
+     *
+     * @param request 当前请求
+     * @return 专家认证材料列表
+     */
+    @Operation(summary = "管理员获取专家认证材料列表")
+    @GetMapping("/admin/certificationMaterials")
+    public HttpResult<java.util.List<ExpertCertificationMaterialDTO>> listExpertCertificationMaterials(
+            HttpServletRequest request) {
+        Object loginUser = request.getAttribute("loginUser");
+        if (!(loginUser instanceof UserDTO userDTO)) {
+            return HttpResult.of(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage(), null);
+        }
+        try {
+            return HttpResult.success(userService.listExpertCertificationMaterials(userDTO));
+        } catch (UserLoginException e) {
+            return HttpResult.of(e.getHttpCode(), e.getMessage(), null);
+        } catch (Exception e) {
+            return HttpResult.fail("获取列表失败");
+        }
     }
 
     /**

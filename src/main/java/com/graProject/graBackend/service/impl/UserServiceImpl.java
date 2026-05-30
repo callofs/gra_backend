@@ -11,6 +11,7 @@ import com.graProject.graBackend.common.utils.UploadFileUtil;
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
 import com.graProject.graBackend.dto.FileDownloadDTO;
+import com.graProject.graBackend.dto.ExpertCertificationMaterialDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
 import com.graProject.graBackend.entity.UserDO;
@@ -752,5 +753,89 @@ public class UserServiceImpl implements UserService {
                 .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowerId, loginUserId)
                 .eq(com.graProject.graBackend.entity.UserFollowDO::getFollowedId, targetUserId);
         return userFollowMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 管理员修改用户角色。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @param userId    被修改的用户 ID
+     * @param role      新角色：1=普通家长 2=认证专家 3=平台管理员
+     */
+    @Override
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public void updateUserRoleByAdmin(UserDTO loginUser, Long userId, Integer role) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        if (loginUser.getRole() == null || loginUser.getRole() != 3) {
+            throw new UserLoginException(HttpCode.FORBIDDEN, HttpCode.FORBIDDEN.getMessage());
+        }
+        if (userId == null) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "用户ID不能为空");
+        }
+        if (role == null || (role != 1 && role != 2 && role != 3)) {
+            throw new UserLoginException(HttpCode.BAD_REQUEST, "角色参数不合法");
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getId, userId)
+                .eq(UserDO::getIsDelete, 0)
+                .last("limit 1");
+        UserDO userDO = userMapper.selectOne(wrapper);
+        if (userDO == null) {
+            throw new UserLoginException(HttpCode.NOT_FOUND, "用户不存在");
+        }
+
+        UserDO updateUser = new UserDO();
+        updateUser.setId(userId);
+        updateUser.setRole(role);
+        updateUser.setUpdateTime(LocalDateTime.now());
+        if (userMapper.updateById(updateUser) <= 0) {
+            throw new UserLoginException(HttpCode.FAILED, "角色修改失败");
+        }
+    }
+
+    /**
+     * 管理员获取专家认证材料列表。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @return 专家认证材料列表
+     */
+    @Override
+    public java.util.List<ExpertCertificationMaterialDTO> listExpertCertificationMaterials(UserDTO loginUser) {
+        if (loginUser == null || loginUser.getId() == null) {
+            throw new UserLoginException(HttpCode.UNAUTHORIZED, HttpCode.UNAUTHORIZED.getMessage());
+        }
+        if (loginUser.getRole() == null || loginUser.getRole() != 3) {
+            throw new UserLoginException(HttpCode.FORBIDDEN, HttpCode.FORBIDDEN.getMessage());
+        }
+
+        LambdaQueryWrapper<UserDO> wrapper = new LambdaQueryWrapper<UserDO>()
+                .eq(UserDO::getIsDelete, 0)
+                .isNotNull(UserDO::getCertificationMaterials)
+                .orderByDesc(UserDO::getCreateTime)
+                .orderByDesc(UserDO::getId);
+        java.util.List<UserDO> expertUsers = userMapper.selectList(wrapper);
+        if (expertUsers == null || expertUsers.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.List<ExpertCertificationMaterialDTO> result = new java.util.ArrayList<>();
+        for (UserDO userDO : expertUsers) {
+            if (userDO == null || userDO.getId() == null) {
+                continue;
+            }
+            ExpertCertificationMaterialDTO dto = ExpertCertificationMaterialDTO.builder()
+                    .userId(userDO.getId())
+                    .username(userDO.getUsername())
+                    .nickname(userDO.getNickname())
+                    .certificationMaterials(userDO.getCertificationMaterials())
+                    .createTime(userDO.getCreateTime())
+                    .updateTime(userDO.getUpdateTime())
+                    .build();
+            result.add(dto);
+        }
+        return result;
     }
 }

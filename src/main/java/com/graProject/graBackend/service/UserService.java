@@ -3,6 +3,7 @@ package com.graProject.graBackend.service;
 import com.graProject.graBackend.dto.LoginRequestDTO;
 import com.graProject.graBackend.dto.LoginResponseDTO;
 import com.graProject.graBackend.dto.FileDownloadDTO;
+import com.graProject.graBackend.dto.ExpertCertificationMaterialDTO;
 import com.graProject.graBackend.dto.RegisterRequestDto;
 import com.graProject.graBackend.dto.UserDTO;
 import org.springframework.web.multipart.MultipartFile;
@@ -125,4 +126,21 @@ public interface UserService {
      * @return 认证材料下载信息（未上传时返回 null）
      */
     FileDownloadDTO getUserCertificationMaterialByAdmin(UserDTO loginUser, Long userId);
+
+    /**
+     * 管理员修改用户角色。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @param userId    被修改的用户 ID
+     * @param role      新角色：1=普通家长 2=认证专家 3=平台管理员
+     */
+    void updateUserRoleByAdmin(UserDTO loginUser, Long userId, Integer role);
+
+    /**
+     * 管理员获取专家认证材料列表。
+     *
+     * @param loginUser 当前登录用户（必须为管理员）
+     * @return 专家认证材料列表
+     */
+    java.util.List<ExpertCertificationMaterialDTO> listExpertCertificationMaterials(UserDTO loginUser);
 }

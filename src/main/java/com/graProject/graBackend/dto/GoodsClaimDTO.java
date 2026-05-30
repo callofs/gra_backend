@@ -64,4 +64,9 @@ public class GoodsClaimDTO implements Serializable {
      */
 
     private Integer isDelete;
+
+    /**
+     * 申请人昵称，返回给发布者查看
+     */
+    private String applicantName;
 }
